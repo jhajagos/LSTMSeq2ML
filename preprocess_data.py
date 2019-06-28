@@ -1,7 +1,16 @@
+"""
+    The goal here is to demonstrate how we can use sequential data from EHRs for making
+    DX prediction.
 
-from sklearn.preprocessing import QuantileTransformer, MinMaxScaler
+    The data here has been processed using the TimeWeaver library and ohdsi mapping files.
+
+    Here we are not going to use any medication but just lab values to make predictions
+
+"""
+
 import h5py
 import numpy as np
+import os
 
 def convert_binary_string_array(string_array):
     return [str(c, "utf8", errors="replace") for c in string_array.tolist()]
@@ -20,30 +29,28 @@ def main(hdf5_file_name, output_file_name, training_split=0.80):
         # We want to make sure that a person is not split across the training and test split
 
         identifier_array_ds = f5["/static/identifier/data/core_array"][...]
-
         identifier_array = np.array(identifier_array_ds,dtype="int").ravel()
 
         n_size = identifier_array.shape[0]
-
         unique_identifier_array = np.unique(identifier_array)
-
         n_identifiers = unique_identifier_array.shape[0]
-
         n_i_training_size = int(n_identifiers * training_split)
+
+        print(n_identifiers, n_i_training_size)
 
         end_identifier_train = unique_identifier_array[n_i_training_size]
         start_identifier_test = unique_identifier_array[n_i_training_size + 1]
 
-        start_position_test  = unique_identifier_array.tolist().index(start_identifier_test)
+        start_position_test = identifier_array.tolist().index(start_identifier_test)
         end_position_train = start_position_test - 1
 
         # We won't have a perfect split percentage wise but we won't have a person split across training and test set
 
         start_position_train = 0
-        end_position_test = n_identifiers
+        end_position_test = n_size
 
         # Now we are going to normalize the nan values in the training set to generate the distribution
-        # Our assumption here is that if we take a sample of 10000
+        # Our assumption here is that if we take a sample of 100000 -  this should be big enough
 
         max_number_of_samples = 100000
 
@@ -51,57 +58,181 @@ def main(hdf5_file_name, output_file_name, training_split=0.80):
 
         metadata_labels = f5["/dynamic/changes/metadata/column_annotations"][...]
         sequence_index = convert_binary_string_array(metadata_labels).index("_sequence_i")
-
-        metadata_array = f5["/dynamic/changes/metadata/column_annotations"]
+        metadata_array = f5["/dynamic/changes/metadata/core_array"]
 
         data_ds = f5["/dynamic/changes/data/core_array"]
-        print(data_ds.shape)
+        data_labels = f5["/dynamic/changes/data/column_annotations"]
+
         _, n_sequence_len, n_types = data_ds.shape
+        recalculate_samples = False
+        if recalculate_samples:
 
-        with h5py.File(output_file_name, "w") as f5w:
+            with h5py.File(output_file_name, "w") as f5w:
 
-            # We will store the samples so we can use for later transforms
+                # We will store the samples so we can use for later transforms
 
-            samples_group = f5w.create_group("/data/samples")
-            samples_ds = samples_group.create_dataset("measures", shape=(max_number_of_samples, n_types))
-            samples_len_ds = samples_group.create_dataset("n", shape=(1, n_types))
+                samples_group = f5w.create_group("/data/samples")
+                samples_ds = samples_group.create_dataset("measures", shape=(max_number_of_samples, n_types))
+                samples_len_ds = samples_group.create_dataset("n", shape=(1, n_types))
 
-            seq_len_group = f5w.create_group("/data/sequence_length/")
-            seq_len_ds = seq_len_group.create_dataset("all", shape=(1, n_size))
+                samples_labels_ds = samples_group.create_dataset("labels", shape=data_labels.shape, dtype=data_labels.dtype)
+                samples_labels_ds[...] = data_labels[...]
 
-            for j in range(n_types):
-                data_list = []
-                for i in range(start_position_train, end_position_test):
-                    if len(data_list) > max_number_of_samples:
-                        break
-                    else:
-                        data_slice = data_ds[i,:,j].tolist()
+                seq_len_group = f5w.create_group("/data/sequence_length/")
+                freq_group = f5w.create_group("/data/frequency")
+                freq_count_ds = freq_group.create_dataset("count", shape=(1,n_types))
+                seq_len_ds = seq_len_group.create_dataset("all", shape=(1, n_size))
 
-                        if 0 in data_slice:
-                            sequence_end = data_slice.index(0) - 1 # TODO: We need to check the sequence_i max
+                # Quantile summary
+                quantile_group = f5w.create_group("/data/summary/quantiles/")
+                quantiles_list = [0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99]
+
+                quantiles_values_ds = quantile_group.create_dataset("values", shape=(1,len(quantiles_list)))
+                quantiles_values_ds[...] = quantiles_list
+
+                quantiles_computed_ds = quantile_group.create_dataset("computed", shape=(len(quantiles_list), n_types))
+
+                # Collect sequences of measurement from training data to generate distrubtions
+                for j in range(n_types):
+                    data_list = []
+                    for i in range(start_position_train, end_position_test):
+
+                        sequence_array = metadata_array[i, :, sequence_index]
+                        max_sequence_i = int(np.max(sequence_array))
+                        seq_len_ds[0,i] = max_sequence_i + 1
+
+                        if len(data_list) > max_number_of_samples:
+                            break
                         else:
-                            sequence_end = len(data_slice)
+                            data_slice = data_ds[i, :, j].tolist()
+                            if 0 in data_slice:
+                                sequence_end = max_sequence_i
+                            else:
+                                sequence_end = len(data_slice)
 
-                        data_items = [ds for ds in data_slice[0:sequence_end] if not(np.isnan(ds))]
+                            data_items = [ds for ds in data_slice[0:sequence_end] if not(np.isnan(ds))]
 
-                        if len(data_items):
-                            data_list += data_items
+                            if len(data_items):
+                                data_list += data_items
+                                freq_count_ds[0, j] += 1
 
-                data_list = data_list[0:max_number_of_samples]
-                number_of_data_items = len(data_list)
-                samples_ds[0:number_of_data_items, j] = np.array(data_list)
-                samples_len_ds[0, j] = number_of_data_items
+                    data_list = data_list[0:max_number_of_samples]
 
-                print(j)
+                    number_of_data_items = len(data_list)
+                    samples_ds[0:number_of_data_items, j] = np.array(data_list)
+                    samples_len_ds[0, j] = number_of_data_items
 
-        # We will compute the 99 and 1 percentiles
-        # Values will larger and small will be truncated
+        # We will compute the 99 and 1 percentiles and use this as a min and max scaler
+        # Values will larger and smaller will be truncated
 
         # Measurements that occur less than 0.01 will be dropped
 
+        feature_threshold = 0.01
+
+        with h5py.File(output_file_name, "a") as f5a:
+            labels = convert_binary_string_array(f5a["/data/samples/labels"][...])
+            quantiles_values = f5a["/data/summary/quantiles/values"][...].ravel()
+            quantiles_computed_ds = f5a["/data/summary/quantiles/computed"]
+            for i in range(len(labels)):
+                n_ds = f5a["/data/samples/n"]
+                samples_ds = f5a["/data/samples/measures"]
+                sequence_length = int(n_ds[0,i])
+                # print(samples_ds.shape)
+                if sequence_length:
+                    # print(i, labels[i], sequence_length)
+                    series = samples_ds[0:sequence_length, i]
+
+                    quantiles_computed_ds[:,i] = np.quantile(series, quantiles_values)
+
+            count_feature_threshold = int(n_i_training_size * feature_threshold)
+
+            frequency_count = f5a["/data/frequency/count"][...]
+            feature_mask_raw = frequency_count >= count_feature_threshold
+            feature_mask = feature_mask_raw[0]
+
+            selected_features = np.array(labels)[feature_mask]
+
+            if "processed" not in list(f5a["/data/"]):
+                f5a.create_group("/data/processed/train/")
+                f5a.create_group("/data/processed/test/")
+
+            train_processed_group = f5a["/data/processed/train/"]
+            test_processed_group = f5a["/data/processed/test/"]
+
+            quantiles = f5a["/data/summary/quantiles/computed"][...]
+            selected_quantiles = quantiles[:, feature_mask]
+
+            input_dependent_shape = f5["/static/dependent/data/core_array"].shape
+            n_target_columns = input_dependent_shape[1]
+
+            train_n_rows = end_position_train + 1
+            test_n_rows = end_position_test - start_position_test
+
+            carry_forward_ds = f5["/dynamic/carry_forward/data/core_array"]
+
+            carry_forward_shape = carry_forward_ds.shape
+            number_of_time_steps = carry_forward_shape[1]
+
+            train_shape = (train_n_rows, number_of_time_steps, len(selected_features))
+            test_shape = (test_n_rows, number_of_time_steps, len(selected_features))
+
+            train_target_shape = (train_n_rows, n_target_columns)
+            test_target_shape = (test_n_rows, n_target_columns)
+
+            if "sequence" not in list(f5a["/data/processed/train/"]):
+                f5a.create_group("/data/processed/train/sequence/")
+                f5a.create_group("/data/processed/train/target/")
+
+                f5a.create_group("/data/processed/test/sequence/")
+                f5a.create_group("/data/processed/test/target/")
+
+            if "core_array" in  list(f5a["/data/processed/train/sequence"]):
+                del f5a["/data/processed/train/sequence/core_array"]
+                del f5a["/data/processed/train/sequence/column_annotations"]
+                del f5a["/data/processed/train/target/core_array"]
+                del f5a["/data/processed/train/target/column_annotations"]
+
+                del f5a["/data/processed/test/sequence/core_array"]
+                del f5a["/data/processed/test/sequence/column_annotations"]
+                del f5a["/data/processed/test/target/core_array"]
+                del f5a["/data/processed/test/target/column_annotations"]
+
+            train_seq_ds = f5a["/data/processed/train/sequence/"].create_dataset("core_array", shape=train_shape)
+            train_seq_label_ds = f5a["/data/processed/train/sequence"].create_dataset("column_annotations",
+                                                                                      shape=(1, len(selected_features)),
+                                                                                      dtype=data_labels.dtype)
+
+            train_target_ds = f5a["/data/processed/train/target/"].create_dataset("core_array", shape=train_target_shape)
+            train_target_label_ds = f5a["/data/processed/train/target/"].create_dataset("column_annotations", shape=(1, train_target_shape[1]))
+
+            test_seq_ds = f5a["/data/processed/test/sequence/"].create_dataset("core_array", shape=test_shape)
+            test_seq_label_ds = f5a["/data/processed/test/sequence"].create_dataset("column_annotations",
+                                                                                      shape=(1, len(selected_features)),
+                                                                                      dtype=data_labels.dtype)
+
+            test_target_ds = f5a["/data/processed/test/target/"].create_dataset("core_array", shape=test_target_shape)
+            test_target_label_ds =  f5a["/data/processed/test/target/"].create_dataset("column_annotations",
+                                                                                       shape=(1, test_target_shape[1]),
+                                                                                       dtype=data_labels.dtype)
+
+            train_seq_label_ds[...] = np.array(selected_features, dtype=data_labels.dtype)
+            test_seq_label_ds[...] = np.array(selected_features, dtype=data_labels.dtype)
+
+            #train_seq_label_ds[...] = np.array()
 
 
 
+
+
+
+
+
+
+            # f5a["/dependent/"]
+            #
+            # f5a["/data/processed/train/sequence/"].create_dataset("core_array", shape=(end_position_train + 1, len(selected_features)))
+            # f5a["/data/processed/train/sequence/"].create_dataset("column_annotations", shape=(1,len(selected_features)), dtype=selected_features.dtype)
+            # f5a["/data/processed/train/target/"].create_dataset("core_array", shape=(end_position_train + 1, ))
 
 
 
