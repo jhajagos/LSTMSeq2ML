@@ -2,15 +2,16 @@
     The goal here is to demonstrate how we can use sequential data from EHRs for making
     DX prediction.
 
-    The data here has been processed using the TimeWeaver library and ohdsi mapping files.
+    The data here has been processed using the TimeWeaver library and ohdsi mapping class files.
 
-    Here we are not going to use any medication but just lab values to make predictions
+    In this experiment we are not going to use any medication but just lab values to make
+    predictions.
 
+    TimeWeaver library can support adding medication.
 """
 
-import h5py
+import h5py  # Python library for reading HDF5
 import numpy as np
-import os
 import argparse
 
 
@@ -38,8 +39,6 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
         n_identifiers = unique_identifier_array.shape[0]
         n_i_training_size = int(n_identifiers * training_split)
 
-        #print(n_identifiers, n_i_training_size)
-
         end_identifier_train = unique_identifier_array[n_i_training_size]
         start_identifier_test = unique_identifier_array[n_i_training_size + 1]
 
@@ -51,15 +50,13 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
         start_position_train = 0
         end_position_test = n_size
 
-        # print(start_position_train, end_position_train, start_position_test, end_position_test)
-        # print(f5["/dynamic/carry_forward/data/core_array"].shape)
-
         # Now we are going to normalize the nan values in the training set to generate the distribution
-        # Our assumption here is that if we take a sample of 100000 -  this should be big enough
+        # Our assumption here is that if we take a sample of 100,000 -  this should be big enough for getting
+        # accurate estimates on the upper and lower limits
 
         max_number_of_samples = 100000
 
-        # We need to know where a sequence ends for each recorded sequence
+        # We need to know where a sequence ends
 
         metadata_labels = f5["/dynamic/changes/metadata/column_annotations"][...]
         sequence_index = convert_binary_string_array(metadata_labels).index("_sequence_i")
@@ -88,7 +85,7 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
                 freq_count_ds = freq_group.create_dataset("count", shape=(1,n_types))
                 seq_len_ds = seq_len_group.create_dataset("all", shape=(1, n_size))
 
-                # Quantile summary
+                # We compute quantiles from the data
                 quantile_group = f5w.create_group("/data/summary/quantiles/")
                 quantiles_list = [0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99]
 
@@ -97,7 +94,8 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
 
                 quantiles_computed_ds = quantile_group.create_dataset("computed", shape=(len(quantiles_list), n_types))
 
-                # Collect sequences of measurement from training data to generate distrubtions
+                # Collect sequences of measurement from training data to generate distributions
+                # This step here needs to be optimized for larger datasets
                 for j in range(n_types):
                     data_list = []
                     for i in range(start_position_train, end_position_test):
@@ -130,14 +128,13 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
                     if j % 10 == 0 and j > 0:
                         print("Processed %s features" % j)
 
-        # We will compute the 99 and 1 percentiles and use this as a min and max scaler
-        # Values will larger and smaller will be truncated
+        # We will compute the 0.99 and 0.01 quantiles and use this as a min and max scaler
+        # Values will larger and smaller will be truncated to the qantiles
 
         # Measurements that occur less than 0.01 will be dropped
-
         feature_threshold = 0.01
 
-        with h5py.File(output_file_name, "a") as f5a:
+        with h5py.File(output_file_name, "a") as f5a:  # We reopen the processed output HDF5 file
             labels = convert_binary_string_array(f5a["/data/samples/labels"][...])
             quantiles_values = f5a["/data/summary/quantiles/values"][...].ravel()
             quantiles_computed_ds = f5a["/data/summary/quantiles/computed"]
@@ -145,9 +142,7 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
                 n_ds = f5a["/data/samples/n"]
                 samples_ds = f5a["/data/samples/measures"]
                 sequence_length = int(n_ds[0,i])
-                # print(samples_ds.shape)
                 if sequence_length:
-                    # print(i, labels[i], sequence_length)
                     series = samples_ds[0:sequence_length, i]
 
                     quantiles_computed_ds[:,i] = np.quantile(series, quantiles_values)
@@ -245,17 +240,15 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
 
             test_target_ds[...] = f5["/static/dependent/data/core_array"][start_position_test:end_position_test, :]
 
-            # Builds the independent matrix
+            # Builds the independent sequence matrices for prediction
             for i in range(n_size):
                 sequence_length = int(f5a["/data/sequence_length/all"][0, i])
                 i_carry_forward_array = carry_forward_ds[i, 0:sequence_length, feature_mask]
 
-                # print(i_carry_forward_array.shape, sequence_length)
-                # raise
-
                 quantile_01 = quantiles_computed_ds[0, feature_mask]
                 quantile_99 = quantiles_computed_ds[-1, feature_mask]
 
+                # This scales the measurements between -1 the lowest quantile and 1 the upper quantile
                 t_carry_forward_array = -1 * (1 - (2 * (i_carry_forward_array - quantile_01) / (quantile_99 - quantile_01)))
 
                 t_carry_forward_array[t_carry_forward_array < -1] = -1
@@ -263,6 +256,7 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
 
                 t_carry_forward_array[np.isnan(t_carry_forward_array)] = 0
 
+                # We need to split into separate
                 if i <= end_position_train:
                     train_seq_ds[i, 0:sequence_length, :] = t_carry_forward_array
                 else:

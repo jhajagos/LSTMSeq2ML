@@ -1,10 +1,14 @@
-
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, LSTM, Dropout, CuDNNLSTM, Masking, SimpleRNN
 from tensorflow.keras.optimizers import SGD
 import numpy as np
 import h5py
+
+"""
+
+"""
+
 
 def main(input_file_name):
 
@@ -17,13 +21,24 @@ def main(input_file_name):
     target_labels = f5_target_labels[...].ravel().tolist()
     target_labels = [str(s, "utf8") for s in target_labels]
 
+    sum_targets = np.sum(f5_target[...], axis=0).tolist()
+
+    sum_target_with_labels = [(target_labels[i].split("|")[-1], sum_targets[i]) for i in range(len(target_labels))]
+
+    sum_target_with_labels.sort(key=lambda x: -1 * x[1])
+
+    print(sum_target_with_labels[0:50])
+
+    # raise(RuntimeError)
+    # Let us generate a list of most frequent features to target for prediction
+
+    target_index = target_labels.index("static_condition_condition_concept_name|Acute renal failure syndrome")
     # print(target_labels)
+    # target_index = target_labels.index("static_condition_condition_concept_name|Anxiety disorder")
     # target_index = target_labels.index("static_condition_condition_concept_name|Essential hypertension")
     # target_index = target_labels.index("static_condition_condition_concept_name|Type 2 diabetes mellitus without complication")
-    target_index = target_labels.index("static_condition_condition_concept_name|Acute renal failure syndrome")
     # target_index = target_labels.index("static_condition_condition_concept_name|Respiratory failure")
     # target_index = target_labels.index("static_condition_condition_concept_name|Heart failure")
-    # target_index = target_labels.index("static_condition_condition_concept_name|Anxiety disorder")
     # target_index = target_labels.index("static_condition_condition_concept_name|Chronic kidney disease")
     # target_index = target_labels.index("static_condition_condition_concept_name|Hyperkalemia")
     # target_index = target_labels.index("static_condition_condition_concept_name|Sepsis")
@@ -31,14 +46,10 @@ def main(input_file_name):
     f5_test = f5["/data/processed/test/sequence/core_array"]
     f5_test_target = f5["/data/processed/test/target/core_array"]
 
-    # print(np.sum(f5_train[0:66,:,:]))
-
-
     f5_train_array = f5_train[...]
     f5_train_array[np.isnan(f5_train_array)] = 0
 
     print(np.sum(f5_train_array))
-
 
     f5_test_array = f5_test[...]
     f5_test_array[np.isnan(f5_test_array)] = 0
