@@ -136,7 +136,7 @@ if __name__ == "__main__":
 
     arg_obj = arg_parse_obj.parse_args()
 
-    # main(arg_obj.hdf5_file_name, arg_obj.target)
+    main(arg_obj.hdf5_file_name, arg_obj.target)
 
     # main("Y:\\healthfacts\\ts\\processed_ohdsi_sequences.hdf5", "Acute renal failure syndrome")
 
