@@ -4,6 +4,7 @@ from tensorflow.keras.layers import Dense, LSTM, Dropout, Masking, SimpleRNN
 import numpy as np
 import h5py
 import pprint
+import argparse
 
 """
 This does a a canonical LSTM model 
@@ -18,6 +19,8 @@ def main(input_file_name, target_name):
     target_index_name = "static_condition_condition_concept_name|" + target_name
 
     f5 = h5py.File(input_file_name)
+
+    target_name_label = "_".join(target_name.lower().split())
 
     f5_train = f5["/data/processed/train/sequence/core_array"]
     f5_target = f5["/data/processed/train/target/core_array"]
@@ -72,7 +75,6 @@ def main(input_file_name, target_name):
     model.add(Dropout(0.2))
 
     model.add(Dense(1, activation="sigmoid"))
-
     opt = tf.keras.optimizers.Adam(lr=1e-3, decay=1e-5)
 
     model.compile(loss="binary_crossentropy", optimizer=opt, metrics=["accuracy"])
@@ -81,7 +83,7 @@ def main(input_file_name, target_name):
               validation_data=(np.array(f5_test_array, dtype="float32"),
               np.array(f5_test_target[:,target_index],dtype="int32")))
 
-    model.save("coeffs.hdf5")
+    model.save(target_name_label + "_coeffs.hdf5")
     # Make a probability prediction
     y_pred_keras = model.predict_proba(np.array(f5_test[...], dtype="float32")).ravel()
 
@@ -106,7 +108,7 @@ def main(input_file_name, target_name):
     print("Total predicted positive cases in test set:")
     print(np.sum(target_threshold_predictions))
 
-    from sklearn.metrics import roc_curve, roc_auc_score, f1_score
+    from sklearn.metrics import roc_curve, roc_auc_score, f1_score, classification_report
 
     model_auc_score = roc_auc_score(np.array(f5_test_target[:, target_index],dtype="int32"), y_pred_keras)
     print("Computed AUC of the ROC:")
@@ -117,15 +119,26 @@ def main(input_file_name, target_name):
     print("F1 score:")
     print(f1)
 
+    print("")
+    print("Classification report")
 
+    print(classification_report(np.array(target_threshold_predictions, dtype="int32"),
+                                np.array(f5_test_target[:, target_index], dtype="int32")))
 
-
-
-
-    # fpr_keras, tpr_keras, thresholds_keras = roc_curve(np.array(f5_test_target[:, target_index],dtype="int32"), y_pred_keras)
 
 if __name__ == "__main__":
-    main("Y:\\healthfacts\\ts\\processed_ohdsi_sequences.hdf5", "Acute renal failure syndrome")
+
+    arg_parse_obj = argparse.ArgumentParser("Train a simple LSTM for EHR lab values sequences")
+    arg_parse_obj.add_argument("-f", "--hdf5-file-name", dest="hdf5_file_name",
+                               default="./processed_ohdsi_sequences.hdf5")
+
+    arg_parse_obj.add_argument("-t", "--target", dest="target", default="Acute renal failure syndrome")
+
+    arg_obj = arg_parse_obj.parse_args()
+
+    # main(arg_obj.hdf5_file_name, arg_obj.target)
+
+    # main("Y:\\healthfacts\\ts\\processed_ohdsi_sequences.hdf5", "Acute renal failure syndrome")
 
     # Code attic
 
@@ -151,3 +164,5 @@ if __name__ == "__main__":
     # #model.add(Dropout(0.10))
 
     # model.add(LSTM(128, activation="tanh", input_shape=(100,182)))
+
+    # fpr_keras, tpr_keras, thresholds_keras = roc_curve(np.array(f5_test_target[:, target_index],dtype="int32"), y_pred_keras)
