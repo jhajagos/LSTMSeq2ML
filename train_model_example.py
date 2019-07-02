@@ -14,7 +14,7 @@ The CuDNNLSTM is much faster but it does not support Masking
 """
 
 
-def main(input_file_name, target_name):
+def main(input_file_name, target_name, n_cut=25):
 
     target_index_name = "static_condition_condition_concept_name|" + target_name
 
@@ -41,7 +41,7 @@ def main(input_file_name, target_name):
 
     # Let us generate a list of most frequent features to target for prediction
     print("The top 25 variables in the test set")
-    pprint.pprint(sum_target_with_labels[0:25])
+    pprint.pprint(sum_target_with_labels[0:n_cut])
     print("")
     print("Predicting: '%s'" % target_name)
 
@@ -89,7 +89,7 @@ def main(input_file_name, target_name):
 
     print("Diagnostics of predictions")
 
-    show_first_n = 25
+    show_first_n = n_cut
     prediction_threshold = 0.5
 
     print("Actual test predictions %s:" % show_first_n)
@@ -114,7 +114,8 @@ def main(input_file_name, target_name):
     print("Computed AUC of the ROC:")
     print(model_auc_score)
 
-    f1 = f1_score(np.array(target_threshold_predictions, dtype="int32"), np.array(f5_test_target[:, target_index], dtype="int32"))
+    f1 = f1_score(np.array(target_threshold_predictions, dtype="int32"), np.array(f5_test_target[:, target_index],
+                                                                                  dtype="int32"))
 
     print("F1 score:")
     print(f1)
@@ -134,9 +135,11 @@ if __name__ == "__main__":
 
     arg_parse_obj.add_argument("-t", "--target", dest="target", default="Acute renal failure syndrome")
 
+    arg_parse_obj.add_argument("-n", "--n-cut-off", dest="n_cut_off", default="25")
+
     arg_obj = arg_parse_obj.parse_args()
 
-    main(arg_obj.hdf5_file_name, arg_obj.target)
+    main(arg_obj.hdf5_file_name, arg_obj.target, int(arg_obj.n_cut_off))
 
     # main("Y:\\healthfacts\\ts\\processed_ohdsi_sequences.hdf5", "Acute renal failure syndrome")
 
