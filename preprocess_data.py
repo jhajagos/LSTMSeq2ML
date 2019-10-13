@@ -2,10 +2,7 @@
     The goal here is to demonstrate how we can use sequential data from EHRs for making
     DX prediction.
 
-    The data here has been processed using the TimeWeaver library and ohdsi mapping class files.
-
-    In this experiment we are not going to use any medication but just lab values to make
-    predictions.
+    The data here has been processed using the TimeWeaver library and OHDSI mapping class files.
 
     TimeWeaver library can support adding medication.
 """
@@ -14,9 +11,73 @@ import h5py  # Python library for reading HDF5
 import numpy as np
 import argparse
 
+"""
+
+Changes:
+
+Sample:
+    Run through
+
+Exclude:
+    "measurement||0|No matching concept"
+    "drug_exposure||0|No matching concept"
+Add:
+    Gender, Age, Days
+
+Linear interpolation between quantiles for meaurement values
+
+quantile_linear_function
+
+"""
+
 
 def convert_binary_string_array(string_array):
     return [str(c, "utf8", errors="replace") for c in string_array.tolist()]
+
+
+def slope(x1, x2, q1, q2):
+    return (q2 - q1) / (x2 - x1)
+
+
+def intercept(x1, x2, q1, q2):
+    return q1 - slope(x1, x2, q1, q2) * x1
+
+
+def lambda_factory(x1, x2, q1, q2):
+    """Lambda factory for scoping linear function"""
+    return lambda x: slope(x1, x2, q1, q2) * x + intercept(x1, x2, q1, q2)
+
+
+def quantile_linear_function(X, quantiles, list_values):
+    """A piecewise linear functions which maps X -> quantile levels"""
+    linear_functions = []
+    interpolating_ranges = []
+    for i in range(1, len(quantiles)):
+        x1 = list_values[i - 1]
+        x2 = list_values[i]
+
+        q1 = quantiles[i - 1]
+        q2 = quantiles[i]
+
+        linear_functions += [lambda_factory(x1, x2, q1, q2)]
+
+        interpolating_ranges += [(x1, x2)]
+
+    linear_functions = [lambda x: 0] + linear_functions + [lambda x: 1]  # set to 0 and 1 if above last quantiles
+    interpolating_ranges = [interpolating_ranges[0][0]] + interpolating_ranges + [interpolating_ranges[-1][1]]
+
+    conditions = []
+    for i in range(len(linear_functions)):
+        if i == 0:
+            conditions += [X < interpolating_ranges[i]]
+        elif i == len(linear_functions) - 1:
+            conditions += [X > interpolating_ranges[i]]
+        elif i == len(linear_functions) - 2:
+            conditions += [np.logical_and(X >= interpolating_ranges[i][0], X <= interpolating_ranges[i][1])]
+        else:
+            conditions += [np.logical_and(X >= interpolating_ranges[i][0], X < interpolating_ranges[i][1])]
+
+    return np.piecewise(X, condlist=conditions, funclist=linear_functions)
 
 
 def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samples=True):
@@ -24,15 +85,12 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
     with h5py.File(hdf5_file_name, "r") as f5:
 
         # We need to normalize the data
-
         # but first we will split the data into test and training test
-
         # For now we will split continuous regions
-
         # We want to make sure that a person is not split across the training and test split
 
         identifier_array_ds = f5["/static/identifier/data/core_array"][...]
-        identifier_array = np.array(identifier_array_ds,dtype="int").ravel()
+        identifier_array = np.array(identifier_array_ds, dtype="int").ravel()
 
         n_size = identifier_array.shape[0]
         unique_identifier_array = np.unique(identifier_array)
@@ -65,7 +123,13 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
         data_ds = f5["/dynamic/changes/data/core_array"]
         data_labels = f5["/dynamic/changes/data/column_annotations"]
 
+        columns_to_exclude = ["measurement||0|No matching concept", "drug_exposure||0|No matching concept"]
+        dynamic_labels = convert_binary_string_array(data_labels[...])
+
         _, n_sequence_len, n_types = data_ds.shape
+
+        numeric_features = ["measurements"]  # Features which we are going to scale using quantiles -1 to 1
+        categorical_features = ["drug_exposure"]  # Cumulative features
 
         if recalculate_samples:
 
@@ -87,9 +151,10 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
 
                 # We compute quantiles from the data
                 quantile_group = f5w.create_group("/data/summary/quantiles/")
-                quantiles_list = [0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99]
+                quantiles_list = [0.001, 0.01, 0.05, 0.1, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75, 0.8, 0.9, 0.95,
+                                  0.99, 0.999]
 
-                quantiles_values_ds = quantile_group.create_dataset("values", shape=(1,len(quantiles_list)))
+                quantiles_values_ds = quantile_group.create_dataset("values", shape=(1, len(quantiles_list)))
                 quantiles_values_ds[...] = quantiles_list
 
                 quantiles_computed_ds = quantile_group.create_dataset("computed", shape=(len(quantiles_list), n_types))
@@ -128,11 +193,10 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
                     if j % 10 == 0 and j > 0:
                         print("Processed %s features" % j)
 
-        # We will compute the 0.99 and 0.01 quantiles and use this as a min and max scaler
-        # Values will larger and smaller will be truncated to the qantiles
+        # We will linear interpolate for quantiles
 
-        # Measurements that occur less than 0.01 will be dropped
-        feature_threshold = 0.01
+        # Measurements that occur less than 0.001 will be dropped
+        feature_threshold = 0.001
 
         with h5py.File(output_file_name, "a") as f5a:  # We reopen the processed output HDF5 file
             labels = convert_binary_string_array(f5a["/data/samples/labels"][...])
@@ -141,11 +205,11 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
             for i in range(len(labels)):
                 n_ds = f5a["/data/samples/n"]
                 samples_ds = f5a["/data/samples/measures"]
-                sequence_length = int(n_ds[0,i])
+                sequence_length = int(n_ds[0, i])
                 if sequence_length:
                     series = samples_ds[0:sequence_length, i]
 
-                    quantiles_computed_ds[:,i] = np.quantile(series, quantiles_values)
+                    quantiles_computed_ds[:, i] = np.quantile(series, quantiles_values)
 
             count_feature_threshold = int(n_i_training_size * feature_threshold)
 
@@ -189,7 +253,7 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
                 f5a.create_group("/data/processed/test/sequence/")
                 f5a.create_group("/data/processed/test/target/")
 
-            if "core_array" in  list(f5a["/data/processed/train/sequence"]):
+            if "core_array" in list(f5a["/data/processed/train/sequence"]):
                 del f5a["/data/processed/train/sequence/core_array"]
                 del f5a["/data/processed/train/sequence/column_annotations"]
                 del f5a["/data/processed/train/target/core_array"]
@@ -212,29 +276,28 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
 
             train_target_label_ds = f5a["/data/processed/train/target/"].create_dataset("column_annotations",
                                                                                         shape=(1, train_target_shape[1]),
-                                                                                        dtype=data_labels.dtype
-                                                                                        )
+                                                                                        dtype=data_labels.dtype)
 
             test_seq_ds = f5a["/data/processed/test/sequence/"].create_dataset("core_array", shape=test_shape,
                                                                                dtype="float32")
 
             test_seq_label_ds = f5a["/data/processed/test/sequence"].create_dataset("column_annotations",
-                                                                                      shape=(1, len(selected_features)),
-                                                                                      dtype=data_labels.dtype)
+                                                                                    shape=(1, len(selected_features)),
+                                                                                    dtype=data_labels.dtype)
 
             test_target_ds = f5a["/data/processed/test/target/"].create_dataset("core_array", shape=test_target_shape,
                                                                                 dtype="int32")
 
             test_target_label_ds = f5a["/data/processed/test/target/"].create_dataset("column_annotations",
-                                                                                       shape=(1, test_target_shape[1]),
-                                                                                       dtype=data_labels.dtype)
+                                                                                      shape=(1, test_target_shape[1]),
+                                                                                      dtype=data_labels.dtype)
 
             train_seq_label_ds[...] = np.array(selected_features, dtype=data_labels.dtype)
             test_seq_label_ds[...] = np.array(selected_features, dtype=data_labels.dtype)
 
             # Populate targets
             train_target_label_ds[...] = f5["/static/dependent/data/column_annotations"][...]
-            test_target_label_ds[...] =  f5["/static/dependent/data/column_annotations"][...]
+            test_target_label_ds[...] = f5["/static/dependent/data/column_annotations"][...]
 
             train_target_ds[...] = f5["/static/dependent/data/core_array"][start_position_train:end_position_train+1, :]
 

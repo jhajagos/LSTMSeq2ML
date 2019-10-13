@@ -50,7 +50,6 @@ def main(input_file_name, target_name, n_cut=25):
     f5_test = f5["/data/processed/test/sequence/core_array"]
     f5_test_target = f5["/data/processed/test/target/core_array"]
 
-
     print("Dimensions of test set:")
     print(f5_test.shape)
     print("Dimensions of target:")
@@ -65,7 +64,6 @@ def main(input_file_name, target_name, n_cut=25):
     f5_test_array[np.isnan(f5_test_array)] = 0
 
     model = Sequential()
-
     model.add(Masking(mask_value=0.0, input_shape=f5_train_array.shape[1:]))
     model.add(LSTM(128, activation="tanh", return_sequences=True))
     model.add(Dropout(0.2))
