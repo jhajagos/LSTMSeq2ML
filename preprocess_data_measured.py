@@ -11,9 +11,72 @@ import h5py  # Python library for reading HDF5
 import numpy as np
 import argparse
 
+"""
+
+Changes:
+
+Sample:
+    Run through
+
+Exclude:
+    "measurement||0|No matching concept"
+    "drug_exposure||0|No matching concept"
+Add:
+     static: Gender, Age,
+     dynamic: Days
+
+Linear interpolation between quantiles for measurement values
+
+"""
+
 
 def convert_binary_string_array(string_array):
     return [str(c, "utf8", errors="replace") for c in string_array.tolist()]
+
+
+def slope(x1, x2, q1, q2):
+    return (q2 - q1) / (x2 - x1)
+
+
+def intercept(x1, x2, q1, q2):
+    return q1 - slope(x1, x2, q1, q2) * x1
+
+
+def lambda_factory(x1, x2, q1, q2):
+    """Lambda factory for scoping linear function"""
+    return lambda x: slope(x1, x2, q1, q2) * x + intercept(x1, x2, q1, q2)
+
+
+def quantile_linear_function(X, quantiles, list_values):
+    """A piecewise linear functions which maps X -> quantile levels"""
+    linear_functions = []
+    interpolating_ranges = []
+    for i in range(1, len(quantiles)):
+        x1 = list_values[i - 1]
+        x2 = list_values[i]
+
+        q1 = quantiles[i - 1]
+        q2 = quantiles[i]
+
+        linear_functions += [lambda_factory(x1, x2, q1, q2)]
+
+        interpolating_ranges += [(x1, x2)]
+
+    linear_functions = [lambda x: 0] + linear_functions + [lambda x: 1]  # set to 0 and 1 if above last quantiles
+    interpolating_ranges = [interpolating_ranges[0][0]] + interpolating_ranges + [interpolating_ranges[-1][1]]
+
+    conditions = []
+    for i in range(len(linear_functions)):
+        if i == 0:
+            conditions += [X < interpolating_ranges[i]]
+        elif i == len(linear_functions) - 1:
+            conditions += [X > interpolating_ranges[i]]
+        elif i == len(linear_functions) - 2:
+            conditions += [np.logical_and(X >= interpolating_ranges[i][0], X <= interpolating_ranges[i][1])]
+        else:
+            conditions += [np.logical_and(X >= interpolating_ranges[i][0], X < interpolating_ranges[i][1])]
+
+    return np.piecewise(X, condlist=conditions, funclist=linear_functions)
 
 
 def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samples=True):
@@ -59,7 +122,13 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
         data_ds = f5["/dynamic/changes/data/core_array"]
         data_labels = f5["/dynamic/changes/data/column_annotations"]
 
+        columns_to_exclude = ["measurement||0|No matching concept", "drug_exposure||0|No matching concept"]
+        dynamic_labels = convert_binary_string_array(data_labels[...])
+
         _, n_sequence_len, n_types = data_ds.shape
+
+        numeric_features = ["measurements"]  # Features which we are going to scale using quantiles -1 to 1
+        categorical_features = ["drug_exposure"]  # Cumulative features
 
         if recalculate_samples:
 
@@ -261,10 +330,10 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
 
 if __name__ == "__main__":
 
-    arg_parse_obj = argparse.ArgumentParser(description="Pre-process HDF5 for applications")
-    arg_parse_obj.add_argument("-f", "--hdf5-file-name", dest="hdf5_file_name")
-    arg_parse_obj.add_argument("-o", "--output-hdf5-file-name", dest="output_file_name")
-    arg_obj = arg_parse_obj.parse_args()
-
+    # arg_parse_obj = argparse.ArgumentParser(description="Pre-process HDF5 for applications")
+    # arg_parse_obj.add_argument("-f", "--hdf5-file-name", dest="hdf5_file_name")
+    # arg_parse_obj.add_argument("-o", "--output-hdf5-file-name", dest="output_file_name")
+    # arg_obj = arg_parse_obj.parse_args()
+    #
     # main(arg_obj.hdf5_file_name, arg_obj.output_file_name)
-    # main("Y:\\healthfacts\\ts\\measurement_drug\\ohdsi_sequences.hdf5.subset.hdf5", "Y:\\healthfacts\\ts\\measurement_drug\\processed_ohdsi_sequences.subset.hdf5")
+    main("Y:\\healthfacts\\ts\\measurement_drug\\ohdsi_sequences.hdf5.subset.hdf5", "Y:\\healthfacts\\ts\\measurement_drug\\processed_ohdsi_sequences.subset.hdf5")
