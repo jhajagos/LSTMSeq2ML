@@ -23,10 +23,10 @@ def main(hdf5_file_name, number_of_samples):
         h5_paths = get_all_paths(f5r["/"])
 
         core_paths = [x for x in h5_paths if "/core_array" in x]
-        print(core_paths)
+        #print(core_paths)
 
         non_core_paths = [x for x in h5_paths if "/core_array" not in x]
-        print(non_core_paths)
+        #print(non_core_paths)
 
         with h5py.File(hdf5_file_name + ".subset.hdf5", "w") as f5w:
 
@@ -57,13 +57,13 @@ def main(hdf5_file_name, number_of_samples):
 
 if __name__ == "__main__":
 
-    # arg_parse_obj = argparse.ArgumentParser(description="Subset the dynamic and static HDF5 file")
-    #
-    # arg_parse_obj.add_argument("-f", "--hdf5-file-name", dest="hdf5_file_name")
-    # arg_parse_obj.add_argument("-n", "--n-subsets", dest="n_subsets", default="1000")
-    #
-    # arg_obj = arg_parse_obj.parse_args()
-    #
-    # main(arg_obj.hdf5_file_name, int(arg_obj.n_subsets))
+    arg_parse_obj = argparse.ArgumentParser(description="Subset the dynamic and static HDF5 file")
 
-    main("Y:\\healthfacts\\ts\\output\\ohdsi_sequences.hdf5", 5)
+    arg_parse_obj.add_argument("-f", "--hdf5-file-name", dest="hdf5_file_name")
+    arg_parse_obj.add_argument("-n", "--n-subsets", dest="n_subsets", default="1000")
+
+    arg_obj = arg_parse_obj.parse_args()
+
+    main(arg_obj.hdf5_file_name, int(arg_obj.n_subsets))
+
+    #main("Y:\\healthfacts\\ts\\output\\ohdsi_sequences.hdf5", 5)
