@@ -91,9 +91,9 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
 
                 # Collect sequences of measurement from training data to generate distributions
                 # This step here needs to be optimized for larger data sets
-                for j in range(n_types):
+                for j in range(n_types):  # Number of features
                     data_list = []
-                    for i in range(start_position_train, end_position_test):
+                    for i in range(start_position_train, end_position_test):  # only iterate through the training set
 
                         sequence_array = metadata_array[i, :, sequence_index]
                         max_sequence_i = int(np.max(sequence_array))
@@ -261,10 +261,10 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
 
 if __name__ == "__main__":
 
-    arg_parse_obj = argparse.ArgumentParser(description="Pre-process HDF5 for applications")
-    arg_parse_obj.add_argument("-f", "--hdf5-file-name", dest="hdf5_file_name")
-    arg_parse_obj.add_argument("-o", "--output-hdf5-file-name", dest="output_file_name")
-    arg_obj = arg_parse_obj.parse_args()
+    # arg_parse_obj = argparse.ArgumentParser(description="Pre-process HDF5 for applications")
+    # arg_parse_obj.add_argument("-f", "--hdf5-file-name", dest="hdf5_file_name")
+    # arg_parse_obj.add_argument("-o", "--output-hdf5-file-name", dest="output_file_name")
+    # arg_obj = arg_parse_obj.parse_args()
 
     # main(arg_obj.hdf5_file_name, arg_obj.output_file_name)
-    # main("Y:\\healthfacts\\ts\\measurement_drug\\ohdsi_sequences.hdf5.subset.hdf5", "Y:\\healthfacts\\ts\\measurement_drug\\processed_ohdsi_sequences.subset.hdf5")
+    main("C:\\Users\\janos\\data\\ts\\ohdsi_sequences.hdf5.subset.hdf5", "C:\\Users\\janos\\data\\ts\\processed_ohdsi_sequences.subset.hdf5")

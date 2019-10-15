@@ -122,13 +122,40 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
         data_ds = f5["/dynamic/changes/data/core_array"]
         data_labels = f5["/dynamic/changes/data/column_annotations"]
 
-        columns_to_exclude = ["measurement||0|No matching concept", "drug_exposure||0|No matching concept"]
+        features_to_exclude = ["measurement||0|No matching concept", "drug_exposure||0|No matching concept"]
         dynamic_labels = convert_binary_string_array(data_labels[...])
+        dynamic_labels_reverse = list(dynamic_labels)
+        dynamic_labels_reverse.reverse()
+
+        class_labels = [d.split("|")[0] for d in dynamic_labels]
+        class_labels_reverse = [d.split("|")[0] for d in dynamic_labels_reverse]
 
         _, n_sequence_len, n_types = data_ds.shape
 
         numeric_features = ["measurements"]  # Features which we are going to scale using quantiles -1 to 1
         categorical_features = ["drug_exposure"]  # Cumulative features
+
+        # Find start and end positions for numeric and categorical features
+        numeric_features_pos_dict = {}
+        for feature_class in numeric_features:
+            numeric_features_pos_dict[feature_class] = (class_labels.index(feature_class), len(feature_class) - class_labels_reverse.index(feature_class))
+
+        categorical_features_pos_dict = {}
+        for feature_class in categorical_features:
+            categorical_features_pos_dict[feature_class] = (class_labels.index(feature_class), len(feature_class) - class_labels_reverse.index(feature_class))
+
+
+        # Include static features
+        independent_static_features = ["/static/independent/data/"]
+
+        independent_static_features_names = {}
+        for static_feature in independent_static_features:
+            independent_static_features_names[static_feature] = convert_binary_string_array(f5[static_feature + "column_annotation"][...])
+
+        total_number_of_independent_features = 0
+        for static_feature in independent_static_features_names:
+            features = independent_static_features_names[static_feature]
+            total_number_of_independent_features += len(features)
 
         if recalculate_samples:
 
@@ -195,7 +222,7 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
         # We will linear interpolate for quantiles
 
         # Measurements that occur less than a set threshold will be dropped
-        feature_threshold = 0.01
+        feature_threshold = 0.001
 
         with h5py.File(output_file_name, "a") as f5a:  # We reopen the processed output HDF5 file
             labels = convert_binary_string_array(f5a["/data/samples/labels"][...])
@@ -213,9 +240,12 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
             count_feature_threshold = int(n_i_training_size * feature_threshold)
 
             frequency_count = f5a["/data/frequency/count"][...]
-            feature_mask_raw = frequency_count >= count_feature_threshold
+            feature_mask_raw = frequency_count >= count_feature_threshold  # Just based on counts
             feature_mask = feature_mask_raw[0]
-            feature_mask[0] = False  # unmapped codes
+
+            for feature in features_to_exclude:
+                if feature in dynamic_labels:
+                    feature_mask[dynamic_labels.index(feature)] = 0
 
             selected_features = np.array(labels)[feature_mask]
             if "processed" not in list(f5a["/data/"]):
@@ -302,21 +332,31 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
 
             test_target_ds[...] = f5["/static/dependent/data/core_array"][start_position_test:end_position_test, :]
 
+            quantile_01 = quantiles_computed_ds[0, feature_mask]
+            quantile_99 = quantiles_computed_ds[-1, feature_mask]
+
             # Builds the independent sequence matrices for prediction
             for i in range(n_size):
                 sequence_length = int(f5a["/data/sequence_length/all"][0, i])
                 i_carry_forward_array = carry_forward_ds[i, 0:sequence_length, feature_mask]
 
-                quantile_01 = quantiles_computed_ds[0, feature_mask]
-                quantile_99 = quantiles_computed_ds[-1, feature_mask]
+                last_step = i_carry_forward_array[feature_mask, sequence_length - 1]
+                raw_has_feature = np.isnan(last_step)
+                has_feature = raw_has_feature[0]
+
+                # TODO: Use quantile piece-wise function
+                # Determine from the last row of carry forward which columns have values
 
                 # This scales the measurements between -1 the lowest quantile and 1 the upper quantile
                 t_carry_forward_array = -1 * (1 - (2 * (i_carry_forward_array - quantile_01) / (quantile_99 - quantile_01)))
 
-                t_carry_forward_array[t_carry_forward_array < -1] = -1
+                t_carry_forward_array[t_carry_forward_array < -1] = -1  # This can be removed
                 t_carry_forward_array[t_carry_forward_array > 1] = 1
 
-                t_carry_forward_array[np.isnan(t_carry_forward_array)] = 0
+                t_carry_forward_array[np.isnan(t_carry_forward_array)] = 0  # np.isnan = 0.5 for measured values and 0 for non-measured values
+
+                # TODO: Add in static variables
+                # For age scale between 0 and 100
 
                 # We need to split into separate
                 if i <= end_position_train:
@@ -330,10 +370,13 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
 
 if __name__ == "__main__":
 
-    # arg_parse_obj = argparse.ArgumentParser(description="Pre-process HDF5 for applications")
-    # arg_parse_obj.add_argument("-f", "--hdf5-file-name", dest="hdf5_file_name")
-    # arg_parse_obj.add_argument("-o", "--output-hdf5-file-name", dest="output_file_name")
-    # arg_obj = arg_parse_obj.parse_args()
+    arg_parse_obj = argparse.ArgumentParser(description="Pre-process HDF5 for applications")
+    arg_parse_obj.add_argument("-f", "--hdf5-file-name", dest="hdf5_file_name")
+    arg_parse_obj.add_argument("-o", "--output-hdf5-file-name", dest="output_file_name")
+    arg_parse_obj.add_argument("-r", "--recalculate-samples", dest="recalculate_samples", default=False,
+                               action="store_true", description="Recalculate samples")
+    arg_parse_obj.add_argument()
+    arg_obj = arg_parse_obj.parse_args()
     #
-    # main(arg_obj.hdf5_file_name, arg_obj.output_file_name)
-    main("Y:\\healthfacts\\ts\\measurement_drug\\ohdsi_sequences.hdf5.subset.hdf5", "Y:\\healthfacts\\ts\\measurement_drug\\processed_ohdsi_sequences.subset.hdf5")
+    #  main(arg_obj.hdf5_file_name, arg_obj.output_file_name, arg_obj.recalculate_samples)
+    # main("Y:\\healthfacts\\ts\\measurement_drug\\ohdsi_sequences.hdf5.subset.hdf5", "Y:\\healthfacts\\ts\\measurement_drug\\processed_ohdsi_sequences.subset.hdf5")
