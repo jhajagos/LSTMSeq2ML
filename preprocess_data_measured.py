@@ -51,6 +51,14 @@ def quantile_linear_function(X, quantiles, list_values):
     """A piecewise linear functions which maps X -> quantile levels"""
     linear_functions = []
     interpolating_ranges = []
+
+    reverse_dict = {}
+    for i in range(0,len(quantiles)):
+        if list_values[i] in reverse_dict:
+            reverse_dict[list_values[i]] += [quantiles[i]]
+        else:
+            reverse_dict[list_values[i]] = [quantiles[i]]
+
     for i in range(1, len(quantiles)):
         x1 = list_values[i - 1]
         x2 = list_values[i]
@@ -58,7 +66,10 @@ def quantile_linear_function(X, quantiles, list_values):
         q1 = quantiles[i - 1]
         q2 = quantiles[i]
 
-        linear_functions += [lambda_factory(x1, x2, q1, q2)]
+        if x1 != x2:  # We need to interpolate
+            linear_functions += [lambda_factory(x1, x2, q1, q2)]
+        else:
+            linear_functions += [lambda x: reverse_dict[x1][-1]] # Do the largest jump
 
         interpolating_ranges += [(x1, x2)]
 
@@ -120,6 +131,7 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
         metadata_array = f5["/dynamic/changes/metadata/core_array"]
 
         data_ds = f5["/dynamic/changes/data/core_array"]
+        carry_ds = f5["/dynamic/carry_forward/data/core_array"]  # For categorical
         data_labels = f5["/dynamic/changes/data/column_annotations"]
 
         features_to_exclude = ["measurement||0|No matching concept", "drug_exposure||0|No matching concept"]
@@ -132,25 +144,38 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
 
         _, n_sequence_len, n_types = data_ds.shape
 
-        numeric_features = ["measurements"]  # Features which we are going to scale using quantiles -1 to 1
+        numeric_features = ["measurement"]  # Features which we are going to scale using quantiles -1 to 1
         categorical_features = ["drug_exposure"]  # Cumulative features
 
         # Find start and end positions for numeric and categorical features
         numeric_features_pos_dict = {}
+
         for feature_class in numeric_features:
-            numeric_features_pos_dict[feature_class] = (class_labels.index(feature_class), len(feature_class) - class_labels_reverse.index(feature_class))
+            numeric_features_pos_dict[feature_class] = (class_labels.index(feature_class), len(class_labels) - class_labels_reverse.index(feature_class) - 1)
 
         categorical_features_pos_dict = {}
         for feature_class in categorical_features:
-            categorical_features_pos_dict[feature_class] = (class_labels.index(feature_class), len(feature_class) - class_labels_reverse.index(feature_class))
+            categorical_features_pos_dict[feature_class] = (class_labels.index(feature_class), len(class_labels) - class_labels_reverse.index(feature_class) - 1)
 
+        # We are going to treat numeric features and categorical features differently
+        position_class_dict = {}
+
+        for feature_class in categorical_features_pos_dict:
+            feature_range = categorical_features_pos_dict[feature_class]
+            for i in range(feature_range[0], feature_range[1] + 1):
+                position_class_dict[i] = "categorical"
+
+        for feature_class in numeric_features_pos_dict:
+            feature_range = numeric_features_pos_dict[feature_class]
+            for i in range(feature_range[0], feature_range[1] + 1):
+                position_class_dict[i] = "numeric"
 
         # Include static features
         independent_static_features = ["/static/independent/data/"]
 
         independent_static_features_names = {}
         for static_feature in independent_static_features:
-            independent_static_features_names[static_feature] = convert_binary_string_array(f5[static_feature + "column_annotation"][...])
+            independent_static_features_names[static_feature] = convert_binary_string_array(f5[static_feature + "column_annotations"][...])
 
         total_number_of_independent_features = 0
         for static_feature in independent_static_features_names:
@@ -173,6 +198,7 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
                 seq_len_group = f5w.create_group("/data/sequence_length/")
                 freq_group = f5w.create_group("/data/frequency")
                 freq_count_ds = freq_group.create_dataset("count", shape=(1, n_types))
+                freq_count_array = np.zeros(shape=(1, n_types))
                 seq_len_ds = seq_len_group.create_dataset("all", shape=(1, n_size))
 
                 # We compute quantiles from the data
@@ -188,6 +214,9 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
                 # Collect sequences of measurement from training data to generate distributions
                 # This step here needs to be optimized for larger data sets
                 for j in range(n_types):
+
+                    feature_type = position_class_dict[j]
+
                     data_list = []
                     for i in range(start_position_train, end_position_test):
 
@@ -198,17 +227,27 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
                         if len(data_list) > max_number_of_samples:
                             break
                         else:
-                            data_slice = data_ds[i, :, j].tolist()
+                            if feature_type == "numeric":
+                                data_slice = data_ds[i, :, j]  # Potential point to optimize
+                            else:  # Categorical
+                                data_slice = [carry_ds[i, max_sequence_i, j]]
+
                             if 0 in data_slice:
                                 sequence_end = max_sequence_i
-                            else:
+                            else:  # If there are no zeros than the sequence has the maximum number of steps
                                 sequence_end = len(data_slice)
 
-                            data_items = [ds for ds in data_slice[0:sequence_end] if not(np.isnan(ds))]
+                            if feature_type == "numeric":
+                                data_items = data_slice[np.logical_not(np.isnan(data_slice))].tolist()
+                            else:  # For categorical just get the last value which is summed
+                                if not(data_slice[-1] == 0) and not(np.isnan(data_slice[-1])):
+                                    data_items = [data_slice[-1]]
+                                else:
+                                    data_items = []
 
                             if len(data_items):
                                 data_list += data_items
-                                freq_count_ds[0, j] += 1
+                                freq_count_array[0, j] += 1
 
                     data_list = data_list[0:max_number_of_samples]
 
@@ -219,10 +258,12 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
                     if j % 10 == 0 and j > 0:
                         print("Processed %s features" % j)
 
+                freq_count_ds[...] = freq_count_array[...]
+
         # We will linear interpolate for quantiles
 
-        # Measurements that occur less than a set threshold will be dropped
-        feature_threshold = 0.001
+        # Measurements that occur less than a set threshold will be dropped from the test set
+        feature_threshold = 0.005
 
         with h5py.File(output_file_name, "a") as f5a:  # We reopen the processed output HDF5 file
             labels = convert_binary_string_array(f5a["/data/samples/labels"][...])
@@ -332,37 +373,66 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
 
             test_target_ds[...] = f5["/static/dependent/data/core_array"][start_position_test:end_position_test, :]
 
-            quantile_01 = quantiles_computed_ds[0, feature_mask]
-            quantile_99 = quantiles_computed_ds[-1, feature_mask]
+            computed_quantiles = quantiles_computed_ds[:, feature_mask]
+            quantile_values = f5a["/data/summary/quantiles/values"][...]
 
             # Builds the independent sequence matrices for prediction
             for i in range(n_size):
                 sequence_length = int(f5a["/data/sequence_length/all"][0, i])
                 i_carry_forward_array = carry_forward_ds[i, 0:sequence_length, feature_mask]
 
-                last_step = i_carry_forward_array[feature_mask, sequence_length - 1]
-                raw_has_feature = np.isnan(last_step)
-                has_feature = raw_has_feature[0]
+                last_step = i_carry_forward_array[-1, :]
 
-                # TODO: Use quantile piece-wise function
-                # Determine from the last row of carry forward which columns have values
+                has_feature = np.logical_not(np.isnan(last_step))
+                feature_position = np.array(range(0, i_carry_forward_array.shape[1]))
+                original_feature_position = feature_position[has_feature]
+                quantile_features = computed_quantiles[:, has_feature]
 
-                # This scales the measurements between -1 the lowest quantile and 1 the upper quantile
-                t_carry_forward_array = -1 * (1 - (2 * (i_carry_forward_array - quantile_01) / (quantile_99 - quantile_01)))
+                i_carry_forward_feature_array = i_carry_forward_array[:, has_feature]
 
-                t_carry_forward_array[t_carry_forward_array < -1] = -1  # This can be removed
-                t_carry_forward_array[t_carry_forward_array > 1] = 1
+                t_carry_forward_array = np.zeros(shape=(sequence_length, np.sum(feature_mask)), dtype=i_carry_forward_feature_array.dtype)
+                t_carry_forward_array[t_carry_forward_array == 0] = np.nan
 
-                t_carry_forward_array[np.isnan(t_carry_forward_array)] = 0  # np.isnan = 0.5 for measured values and 0 for non-measured values
+                for j in range(quantile_features.shape[1]):
 
-                # TODO: Add in static variables
-                # For age scale between 0 and 100
+                    has_measured_values = np.logical_not(np.isnan(i_carry_forward_feature_array[:, j]))
+
+                    linear_quantile = quantile_linear_function(i_carry_forward_feature_array[has_measured_values, j],
+                                                               quantile_values.tolist()[0],
+                                                               quantile_features[:, j].tolist())
+                    t_carry_forward_array[has_measured_values, original_feature_position[j]] = linear_quantile
+
+                for feature_class in categorical_features_pos_dict:
+                    feature_class_range = categorical_features_pos_dict[feature_class]
+                    print(feature_class_range)
+
+                for feature_class in numeric_features_pos_dict:
+                    feature_class_range = numeric_features_pos_dict[feature_class]
+                    print(feature_class_range)
+
+                t_carry_forward_array[np.isnan(t_carry_forward_array)] = 0  # np.isnan = 0.5 for numeric values
 
                 # We need to split into separate
                 if i <= end_position_train:
                     train_seq_ds[i, 0:sequence_length, :] = t_carry_forward_array
                 else:
                     test_seq_ds[i - start_position_test, 0:sequence_length, :] = t_carry_forward_array
+
+                # TODO: Add in static variables to time
+                # For age scale between 0 and 100
+
+                # TODO Add in identifiers
+                # primary_person_id
+                # /static/identifier/data/core_array
+
+                # /static/identifier/id/core_array
+
+                # TODO: Add non scaled data
+
+                # TODO: Add in metadata about sequences
+
+                # /dynamic/carry_forward/metadata/core_array
+                # _sequence_time_delta _sequence_i _start_time _time_span
 
                 if i % 100 == 0:
                     print("Wrote %s matrices" % i)
@@ -374,9 +444,10 @@ if __name__ == "__main__":
     arg_parse_obj.add_argument("-f", "--hdf5-file-name", dest="hdf5_file_name")
     arg_parse_obj.add_argument("-o", "--output-hdf5-file-name", dest="output_file_name")
     arg_parse_obj.add_argument("-r", "--recalculate-samples", dest="recalculate_samples", default=False,
-                               action="store_true", description="Recalculate samples")
-    arg_parse_obj.add_argument()
+                               action="store_true", help="Recalculate samples")
+    #arg_parse_obj.add_argument()
     arg_obj = arg_parse_obj.parse_args()
-    #
-    #  main(arg_obj.hdf5_file_name, arg_obj.output_file_name, arg_obj.recalculate_samples)
-    # main("Y:\\healthfacts\\ts\\measurement_drug\\ohdsi_sequences.hdf5.subset.hdf5", "Y:\\healthfacts\\ts\\measurement_drug\\processed_ohdsi_sequences.subset.hdf5")
+    main(arg_obj.hdf5_file_name, arg_obj.output_file_name, arg_obj.recalculate_samples)
+    # main("C:\\Users\\janos\\data\\ts\\ohdsi_sequences.hdf5.subset.hdf5",
+    #      "C:\\Users\\janos\\data\\ts\\processed_ohdsi_sequences.subset.hdf5",
+    #      recalculate_samples=True)
