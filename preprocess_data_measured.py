@@ -413,11 +413,11 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
 
                 for feature_class in categorical_features_pos_dict:
                     feature_class_range = categorical_features_pos_dict[feature_class]
-                    print(feature_class_range)
+                    #print(feature_class_range)
 
                 for feature_class in numeric_features_pos_dict:
                     feature_class_range = numeric_features_pos_dict[feature_class]
-                    print(feature_class_range)
+                    #print(feature_class_range)
 
                 t_carry_forward_array[np.isnan(t_carry_forward_array)] = 0  # np.isnan = 0.5 for numeric values
 
