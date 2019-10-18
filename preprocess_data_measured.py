@@ -447,7 +447,7 @@ if __name__ == "__main__":
                                action="store_true", help="Recalculate samples")
     #arg_parse_obj.add_argument()
     arg_obj = arg_parse_obj.parse_args()
-    main(arg_obj.hdf5_file_name, arg_obj.output_file_name, arg_obj.recalculate_samples)
+    main(arg_obj.hdf5_file_name, arg_obj.output_file_name, recalculate_samples=arg_obj.recalculate_samples)
     # main("C:\\Users\\janos\\data\\ts\\ohdsi_sequences.hdf5.subset.hdf5",
     #      "C:\\Users\\janos\\data\\ts\\processed_ohdsi_sequences.subset.hdf5",
     #      recalculate_samples=True)
