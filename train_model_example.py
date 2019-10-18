@@ -1,4 +1,5 @@
 import tensorflow as tf
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, LSTM, Dropout, Masking, SimpleRNN
 import numpy as np
@@ -40,7 +41,7 @@ def main(input_file_name, target_name, n_cut=25):
     sum_target_with_labels.sort(key=lambda x: -1 * x[1])
 
     # Let us generate a list of most frequent features to target for prediction
-    print("The top 25 variables in the test set")
+    print("The top %s variables in the training set" % n_cut)
     pprint.pprint(sum_target_with_labels[0:n_cut])
     print("")
     print("Predicting: '%s'" % target_name)
@@ -76,6 +77,11 @@ def main(input_file_name, target_name, n_cut=25):
     opt = tf.keras.optimizers.Adam(lr=1e-3, decay=1e-5)
 
     model.compile(loss="binary_crossentropy", optimizer=opt, metrics=["accuracy"])
+
+    es_callback = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=200)
+    mc_callback = ModelCheckpoint('best_model.h5', monitor='val_accuracy', mode='max', verbose=1, save_best_only=True)
+    # fit model
+
     # This can be refactored as explicit casts are not needed
     model.fit(np.array(f5_train_array, dtype="float32"), np.array(f5_target[:, target_index], dtype="int32"), epochs=3,
               validation_data=(np.array(f5_test_array, dtype="float32"),
