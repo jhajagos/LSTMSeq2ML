@@ -128,7 +128,8 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
 
         metadata_labels = f5["/dynamic/changes/metadata/column_annotations"][...]
         sequence_index = convert_binary_string_array(metadata_labels).index("_sequence_i")
-        metadata_array = f5["/dynamic/changes/metadata/core_array"]
+        metadata_ds = f5["/dynamic/changes/metadata/core_array"]
+        metadata_array = metadata_ds[:,:, sequence_index]
 
         data_ds = f5["/dynamic/changes/data/core_array"]
         carry_ds = f5["/dynamic/carry_forward/data/core_array"]  # For categorical
@@ -217,10 +218,16 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
 
                     feature_type = position_class_dict[j]
 
+                    if feature_type == "numeric":
+                        data_array = data_ds[:, :, j]  # Potential point to optimize
+                    else:  # Categorical
+                        data_array = carry_ds[:, :, j]
+
+
                     data_list = []
                     for i in range(start_position_train, end_position_test):
 
-                        sequence_array = metadata_array[i, :, sequence_index]
+                        sequence_array = metadata_array[i, :]
                         max_sequence_i = int(np.max(sequence_array))
                         seq_len_ds[0, i] = max_sequence_i + 1
 
@@ -228,9 +235,11 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
                             break
                         else:
                             if feature_type == "numeric":
-                                data_slice = data_ds[i, :, j]  # Potential point to optimize
+                                #print(data_array.shape)
+                                data_slice = data_array[i, :]  # Potential point to optimize
                             else:  # Categorical
-                                data_slice = [carry_ds[i, max_sequence_i, j]]
+                                #print(data_array.shape)
+                                data_slice = [data_array[i, max_sequence_i]]
 
                             if 0 in data_slice:
                                 sequence_end = max_sequence_i
@@ -448,6 +457,6 @@ if __name__ == "__main__":
     #arg_parse_obj.add_argument()
     arg_obj = arg_parse_obj.parse_args()
     main(arg_obj.hdf5_file_name, arg_obj.output_file_name, recalculate_samples=arg_obj.recalculate_samples)
-    # main("C:\\Users\\janos\\data\\ts\\ohdsi_sequences.hdf5.subset.hdf5",
+    #main("C:\\Users\\janos\\data\\ts\\ohdsi_sequences.hdf5.subset.hdf5",
     #      "C:\\Users\\janos\\data\\ts\\processed_ohdsi_sequences.subset.hdf5",
     #      recalculate_samples=True)
