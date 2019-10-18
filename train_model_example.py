@@ -66,7 +66,7 @@ def main(input_file_name, target_name, n_cut=25):
 
     model = Sequential()
     model.add(Masking(mask_value=0.0, input_shape=f5_train_array.shape[1:]))
-    model.add(LSTM(128, activation="tanh", return_sequences=True))
+    model.add(LSTM(256, activation="tanh", return_sequences=True))
     model.add(Dropout(0.2))
     model.add(LSTM(128, activation="tanh"))
     model.add(Dropout(0.2))
@@ -83,9 +83,10 @@ def main(input_file_name, target_name, n_cut=25):
     # fit model
 
     # This can be refactored as explicit casts are not needed
-    model.fit(np.array(f5_train_array, dtype="float32"), np.array(f5_target[:, target_index], dtype="int32"), epochs=3,
+    model.fit(np.array(f5_train_array, dtype="float32"), np.array(f5_target[:, target_index], dtype="int32"), epochs=5,
               validation_data=(np.array(f5_test_array, dtype="float32"),
-              np.array(f5_test_target[:,target_index],dtype="int32")))
+              np.array(f5_test_target[:, target_index], dtype="int32")), callbacks=[es_callback, mc_callback],
+              batch_size=100)
 
     model.save(target_name_label + "_coeffs.hdf5")
     # Make a probability prediction
