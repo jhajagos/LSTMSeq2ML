@@ -68,9 +68,9 @@ def main(input_file_name, target_name, n_cut=25):
     model.add(Masking(mask_value=0.0, input_shape=f5_train_array.shape[1:]))
     model.add(LSTM(256, activation="tanh", return_sequences=True))
     model.add(Dropout(0.2))
-    model.add(LSTM(128, activation="tanh"))
+    model.add(LSTM(256, activation="tanh"))
     model.add(Dropout(0.2))
-    model.add(Dense(64, activation="relu"))
+    model.add(Dense(128, activation="relu"))
     model.add(Dropout(0.2))
 
     model.add(Dense(1, activation="sigmoid"))
@@ -83,7 +83,7 @@ def main(input_file_name, target_name, n_cut=25):
     # fit model
 
     # This can be refactored as explicit casts are not needed
-    model.fit(np.array(f5_train_array, dtype="float32"), np.array(f5_target[:, target_index], dtype="int32"), epochs=5,
+    model.fit(np.array(f5_train_array, dtype="float32"), np.array(f5_target[:, target_index], dtype="int32"), epochs=10,
               validation_data=(np.array(f5_test_array, dtype="float32"),
               np.array(f5_test_target[:, target_index], dtype="int32")), callbacks=[es_callback, mc_callback],
               batch_size=100)
