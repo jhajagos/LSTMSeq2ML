@@ -78,7 +78,7 @@ def main(input_file_name, target_name, n_cut=25):
 
     model.compile(loss="binary_crossentropy", optimizer=opt, metrics=["accuracy"])
 
-    es_callback = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=2)
+    es_callback = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=2, restore_best_weights=True)
     mc_callback = ModelCheckpoint('best_model.h5', monitor='val_loss', mode='min', verbose=1, save_best_only=True)
     # fit model
 
@@ -88,7 +88,7 @@ def main(input_file_name, target_name, n_cut=25):
               np.array(f5_test_target[:, target_index], dtype="int32")), callbacks=[es_callback, mc_callback],
               batch_size=100)
 
-    model.load("best_weights.h5")
+    model.load_weights("best_weights.h5")
 
     model.save(target_name_label + "_coeffs.hdf5")
     # Make a probability prediction
