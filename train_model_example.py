@@ -76,7 +76,7 @@ def main(input_file_name, target_name, n_cut=25):
     model.add(Dense(1, activation="sigmoid"))
     opt = tf.keras.optimizers.Adam(lr=1e-3, decay=1e-5)
 
-    model.compile(loss="binary_crossentropy", optimizer=opt, metrics=["accuracy"])
+    model.compile(loss="binary_crossentropy", optimizer=opt, metrics=["accuracy", "val_accuracy"])
 
     es_callback = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=200)
     mc_callback = ModelCheckpoint('best_model.h5', monitor='val_accuracy', mode='max', verbose=1, save_best_only=True)
