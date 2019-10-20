@@ -37,7 +37,7 @@ def main(input_file_name, target_name, n_cut=25):
 
     # Get a count of the most frequent labels
     sum_targets = np.sum(f5_target[...], axis=0).tolist()
-    sum_target_with_labels = [(target_labels[i].split("|")[-1], sum_targets[i]) for i in range(len(target_labels))]
+    sum_target_with_labels = [(target_labels[i].split("|")[-1], sum_targets[i], sum_targets[i] / f5_train.shape[0]) for i in range(len(target_labels))]
     sum_target_with_labels.sort(key=lambda x: -1 * x[1])
 
     # Let us generate a list of most frequent features to target for prediction
