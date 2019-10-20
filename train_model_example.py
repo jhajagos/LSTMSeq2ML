@@ -88,7 +88,7 @@ def main(input_file_name, target_name, n_cut=25):
               np.array(f5_test_target[:, target_index], dtype="int32")), callbacks=[es_callback, mc_callback],
               batch_size=100)
 
-    model.load_weights("best_weights.h5")
+    model.load_weights("best_model.h5")
 
     model.save(target_name_label + "_coeffs.hdf5")
     # Make a probability prediction
