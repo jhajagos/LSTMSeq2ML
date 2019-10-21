@@ -107,7 +107,7 @@ def main(input_file_name, target_name, n_cut=25):
 
     target_threshold_predictions = np.array(y_pred_keras > prediction_threshold, dtype="float32")
     print("Setting the prediction threshold at %s" % prediction_threshold)
-    print(target_threshold_predictions[0:show_first_n])
+    print(np.array(target_threshold_predictions[0:show_first_n], dtype="int32"))
 
     print("Total positive cases in test set:")
     print(np.sum(f5_test_target[:, target_index]))
@@ -115,23 +115,29 @@ def main(input_file_name, target_name, n_cut=25):
     print("Total predicted positive cases in test set:")
     print(np.sum(target_threshold_predictions))
 
-    from sklearn.metrics import roc_curve, roc_auc_score, f1_score, classification_report
+    print("Total sum of probabilities")
+    print(np.sum(y_pred_keras))
+
+    from sklearn.metrics import roc_curve, roc_auc_score, f1_score, classification_report, average_precision_score
 
     model_auc_score = roc_auc_score(np.array(f5_test_target[:, target_index],dtype="int32"), y_pred_keras)
     print("Computed AUC of the ROC:")
     print(model_auc_score)
 
-    f1 = f1_score(np.array(target_threshold_predictions, dtype="int32"), np.array(f5_test_target[:, target_index],
-                                                                                  dtype="int32"))
-
+    f1 = f1_score(np.array(target_threshold_predictions, dtype="int32"), np.array(f5_test_target[:, target_index], dtype="int32"))
     print("F1 score:")
     print(f1)
+
+    avg_prec_rec = average_precision_score(np.array(target_threshold_predictions, dtype="int32"), np.array(f5_test_target[:, target_index], dtype="int32"))
+    print("Average precision score:")
+    print(avg_prec_rec)
 
     print("")
     print("Classification report")
 
     print(classification_report(np.array(target_threshold_predictions, dtype="int32"),
                                 np.array(f5_test_target[:, target_index], dtype="int32")))
+
 
 
 if __name__ == "__main__":
