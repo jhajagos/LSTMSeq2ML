@@ -102,12 +102,12 @@ def main(input_file_name, target_name, n_cut=25):
     print("Actual test predictions %s:" % show_first_n)
     print(f5_test_target[0:show_first_n, target_index])
 
-    print("Probability of first %s predictions from the model:" % show_first_n)
-    print(y_pred_keras[0:show_first_n])
-
     target_threshold_predictions = np.array(y_pred_keras > prediction_threshold, dtype="float32")
     print("Setting the prediction threshold at %s" % prediction_threshold)
     print(np.array(target_threshold_predictions[0:show_first_n], dtype="int32"))
+
+    print("Probability of first %s predictions from the model:" % show_first_n)
+    print(y_pred_keras[0:show_first_n])
 
     print("Total positive cases in test set:")
     print(np.sum(f5_test_target[:, target_index]))
@@ -134,6 +134,8 @@ def main(input_file_name, target_name, n_cut=25):
 
     print("")
     print("Classification report")
+
+
 
     print(classification_report(np.array(target_threshold_predictions, dtype="int32"),
                                 np.array(f5_test_target[:, target_index], dtype="int32")))
