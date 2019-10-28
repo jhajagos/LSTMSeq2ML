@@ -235,19 +235,19 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
                             break
                         else:
                             if feature_type == "numeric":
-                                #print(data_array.shape)
                                 data_slice = data_array[i, :]  # Potential point to optimize
                             else:  # Categorical
-                                #print(data_array.shape)
                                 data_slice = [data_array[i, max_sequence_i]]
 
-                            if 0 in data_slice:
+                            if 0.0 in data_slice:
                                 sequence_end = max_sequence_i
                             else:  # If there are no zeros than the sequence has the maximum number of steps
                                 sequence_end = len(data_slice)
 
                             if feature_type == "numeric":
+                                data_slice = data_slice[0:sequence_end]
                                 data_items = data_slice[np.logical_not(np.isnan(data_slice))].tolist()
+
                             else:  # For categorical just get the last value which is summed
                                 if not(data_slice[-1] == 0) and not(np.isnan(data_slice[-1])):
                                     data_items = [data_slice[-1]]
@@ -457,6 +457,6 @@ if __name__ == "__main__":
     #arg_parse_obj.add_argument()
     arg_obj = arg_parse_obj.parse_args()
     main(arg_obj.hdf5_file_name, arg_obj.output_file_name, recalculate_samples=arg_obj.recalculate_samples)
-    #main("C:\\Users\\janos\\data\\ts\\ohdsi_sequences.hdf5.subset.hdf5",
-    #      "C:\\Users\\janos\\data\\ts\\processed_ohdsi_sequences.subset.hdf5",
-    #      recalculate_samples=True)
+    # main("C:\\Users\\janos\\data\\ts\\ohdsi_sequences.hdf5.subset.hdf5",
+    #       "C:\\Users\\janos\\data\\ts\\processed_ohdsi_sequences.subset.hdf5",
+    #       recalculate_samples=True)

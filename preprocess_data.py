@@ -103,7 +103,7 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
                             break
                         else:
                             data_slice = data_ds[i, :, j].tolist()
-                            if 0 in data_slice:
+                            if 0.0 in data_slice:
                                 sequence_end = max_sequence_i
                             else:
                                 sequence_end = len(data_slice)
