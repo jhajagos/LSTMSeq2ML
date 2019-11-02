@@ -79,7 +79,7 @@ if __name__ == "__main__":
     arg_parse_obj.add_argument("-i", "--round-to-nearest-integer", dest="round_to_nearest_integer", default=True, action="store_false")
     arg_obj = arg_parse_obj.parse_args()
 
-    main(arg_obj.hdf5_file_name, int(arg_obj.over_sample_positive_case), arg_obj.uniform_error, arg_obj.round_to_nearest_integer)
+    main(arg_obj.hdf5_file_name, int(arg_obj.over_sample_positive_case), float(arg_obj.uniform_error), arg_obj.round_to_nearest_integer)
 
 
     #main("prescriber_multi_year.split.hdf5", 1000, 0.05, True)
