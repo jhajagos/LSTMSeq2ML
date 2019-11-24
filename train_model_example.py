@@ -219,8 +219,13 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
 
     results_dict_file_name = os.path.join(output_directory, target_name_label + "_" + end_label_time_stamp + ".json")
 
-    with open(results_dict_file_name, mode="w") as fw:
-        json.dump(results_dict, fw, indent=4, sort_keys=True)
+    try:
+        with open(results_dict_file_name, mode="w") as fw:
+            json.dump(results_dict, fw, indent=4, sort_keys=True)
+    except TypeError:
+        import pprint
+        pprint.pprint(results_dict)
+        raise
 
 
 if __name__ == "__main__":
