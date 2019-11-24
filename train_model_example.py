@@ -102,7 +102,7 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
     # Fit the model to the data
 
     # This can be refactored as explicit casts are not needed
-    model.fit(np.array(f5_train_array, dtype="float32"), np.array(f5_target[:, target_index], dtype="int32"), epochs,
+    model.fit(np.array(f5_train_array, dtype="float32"), np.array(f5_target[:, target_index], dtype="int32"), epochs=epochs,
               validation_data=(np.array(f5_test_array, dtype="float32"),
               np.array(f5_test_target[:, target_index], dtype="int32")), callbacks=[es_callback, mc_callback],
               batch_size=batch_size)
