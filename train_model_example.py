@@ -118,7 +118,7 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
     time_lapse = end_date_time - start_date_time
 
     coefficients_filename = target_name_label + "_" + end_label_time_stamp + "_coeffs.hdf5"
-    model.save(os.path.joins(output_directory, coefficients_filename))
+    model.save(os.path.join(output_directory, coefficients_filename))
 
     # Make a probability prediction
     y_pred_keras = model.predict_proba(np.array(f5_test[...], dtype="float32")).ravel()
