@@ -184,7 +184,7 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
     sum_of_probabilities_test_set = np.sum(y_pred_keras)
     print("Total sum of probabilities")
     print(sum_of_probabilities_test_set)
-    test_dict["sum_of_probabilities_test_set"] = sum_of_probabilities_test_set
+    test_dict["sum_of_probabilities_test_set"] = float(sum_of_probabilities_test_set)
 
     model_auc_score = roc_auc_score(np.array(f5_test_target[:, target_index], dtype="int32"), y_pred_keras)
     print("Computed AUC of the ROC:")
