@@ -173,7 +173,7 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
     test_dict = results_dict["test"]
     test_dict["total_positive_cases_test_set"] = int(total_positive_cases_test_set)
 
-    total_positive_cases_training_set = np.sum(f5_target[:, target_index])
+    total_positive_cases_training_set = int(np.sum(f5_target[:, target_index]))
     results_dict["data"]["total_positive_cases_training_set"] = total_positive_cases_training_set
 
     sum_predicted_test_set = int(np.sum(target_threshold_predictions))
