@@ -36,7 +36,7 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
     print("Dimensions of training set:")
     print(f5_train.shape)
 
-    training_size_n, features_n = f5_train.shape
+    training_size_n, time_steps_n, features_n = f5_train.shape
 
     print("Dimension of full target:")
     print(f5_target.shape)
@@ -64,7 +64,7 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
 
     print("Dimensions of test set:")
     print(f5_test.shape)
-    testing_size_n, _ = f5_test.shape
+    testing_size_n, _, _ = f5_test.shape
 
     print("Dimensions of target:")
     print(f5_test_target.shape)
@@ -146,8 +146,9 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
     results_dict["data"] = {}
     results_dict["data"]["input_file_name"] = os.path.abspath(input_file_name)
 
-    results_dict["training_size_n"] = training_size_n
-    results_dict["features_n"] = features_n
+    results_dict["data"]["training_size_n"] = training_size_n
+    results_dict["data"]["features_n"] = features_n
+    results_dict["data"]["max_time_steps_n"] = time_steps_n
 
     print("Diagnostics of predictions")
 
@@ -226,23 +227,14 @@ if __name__ == "__main__":
     arg_parse_obj = argparse.ArgumentParser("Train a simple LSTM for EHR lab values sequences")
     arg_parse_obj.add_argument("-f", "--hdf5-file-name", dest="hdf5_file_name",
                                default="./processed_ohdsi_sequences.hdf5")
-
     arg_parse_obj.add_argument("-t", "--target", dest="target", default="Acute renal failure syndrome")
-
     arg_parse_obj.add_argument("-n", "--n-cut-off", dest="n_cut_off", default="25")
-
     arg_parse_obj.add_argument("-o", "--output-directory", dest="output_directory", default="./")
-
     arg_parse_obj.add_argument("-p", "--prediction-threshold", dest="prediction_threshold", default="0.5")
-
     arg_parse_obj.add_argument("-e", "--epochs", dest="epochs", default="10")
-
     arg_parse_obj.add_argument("-b", "--batch-size", dest="batch_size", default="50")
-
     arg_parse_obj.add_argument("-l", "--learning-rate", dest="learning_rate", default="1e-3")
-
     arg_parse_obj.add_argument("-d", "--learning-rate-decay", dest="learning_rate_decay", default="1e-4")
-
 
     arg_obj = arg_parse_obj.parse_args()
 
