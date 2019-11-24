@@ -77,7 +77,7 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
     f5_test_array = f5_test[...]
     f5_test_array[np.isnan(f5_test_array)] = 0
 
-    start_date_time = datetime.date.utcnow()
+    start_date_time = datetime.datetime.utcnow()
 
     #TODO: Make models plugin
     model = Sequential()
