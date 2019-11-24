@@ -102,7 +102,8 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
     # Fit the model to the data
 
     # This can be refactored as explicit casts are not needed
-    model.fit(np.array(f5_train_array, dtype="float32"), np.array(f5_target[:, target_index], dtype="int32"), epochs=epochs,
+    model.fit(np.array(f5_train_array, dtype="float32"), np.array(f5_target[:, target_index], dtype="int32"),
+              epochs=epochs,
               validation_data=(np.array(f5_test_array, dtype="float32"),
               np.array(f5_test_target[:, target_index], dtype="int32")), callbacks=[es_callback, mc_callback],
               batch_size=batch_size)
@@ -114,7 +115,7 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
     start_time_stamp = start_date_time.strftime("%Y-%m-%d %H:%M:%S")
     end_time_stamp = end_date_time.strftime("%Y-%m-%d %H:%M:%S")
 
-    time_lapse = end_time_stamp - start_time_stamp
+    time_lapse = end_date_time - start_date_time
 
     coefficients_filename = target_name_label + "_" + end_label_time_stamp + "_coeffs.hdf5"
     model.save(os.path.joins(output_directory, coefficients_filename))
