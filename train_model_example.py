@@ -214,7 +214,7 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
     prediction_results_file_name = os.path.join(output_directory, "predicted_" + target_name_label + "_" + end_label_time_stamp)
 
     with h5py.File(prediction_results_file_name, "w") as f5w:
-        ds = f5w["/"].create_dataset(shape=target_threshold_predictions.shape, dtype=target_threshold_predictions.dtype)
+        ds = f5w["/"].create_dataset(name="proba", shape=target_threshold_predictions.shape, dtype=target_threshold_predictions.dtype)
         ds[...] = target_threshold_predictions[...]
 
     results_dict_file_name = os.path.join(output_directory, target_name_label + "_" + end_label_time_stamp)
