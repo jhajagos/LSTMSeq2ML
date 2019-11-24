@@ -147,9 +147,9 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
     results_dict["data"] = {}
     results_dict["data"]["input_file_name"] = os.path.abspath(input_file_name)
 
-    results_dict["data"]["training_size_n"] = training_size_n
-    results_dict["data"]["features_n"] = features_n
-    results_dict["data"]["max_time_steps_n"] = time_steps_n
+    results_dict["data"]["training_size_n"] = int(training_size_n)
+    results_dict["data"]["features_n"] = int(features_n)
+    results_dict["data"]["max_time_steps_n"] = int(time_steps_n)
 
     print("Diagnostics of predictions")
 
@@ -165,18 +165,18 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
     print("Probability of first %s predictions from the model:" % show_first_n)
     print(y_pred_keras[0:show_first_n])
 
-    total_positive_cases_test_set = np.sum(f5_test_target[:, target_index])
+    total_positive_cases_test_set = int(np.sum(f5_test_target[:, target_index]))
     print("Total positive cases in test set:")
     print(total_positive_cases_test_set)
 
     results_dict["test"] = {}
     test_dict = results_dict["test"]
-    test_dict["total_positive_cases_test_set"] = total_positive_cases_test_set
+    test_dict["total_positive_cases_test_set"] = int(total_positive_cases_test_set)
 
     total_positive_cases_training_set = np.sum(f5_target[:, target_index])
     results_dict["data"]["total_positive_cases_training_set"] = total_positive_cases_training_set
 
-    sum_predicted_test_set = np.sum(target_threshold_predictions)
+    sum_predicted_test_set = int(np.sum(target_threshold_predictions))
     print("Total predicted positive cases in test set:")
     print(sum_predicted_test_set)
     test_dict["sum_predicted_test_set"] = sum_predicted_test_set
