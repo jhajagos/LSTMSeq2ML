@@ -12,33 +12,72 @@ import numpy as np
 import argparse
 
 """
+Proposed changes:
 
-Changes:
-
-Sample:
-    Run through
-
-Exclude:
-    "measurement||0|No matching concept"
-    "drug_exposure||0|No matching concept"
+Training and test set assignment:
+    Sort by person_id,
+    
+    Training and test split is based on person_id's being randomly assigned to training and test set
+    
+    Person id
+        /static/identifier/data/
+            column_annotations
+                primary_person_id
+    Start time
+        /dynamic/carry_forward/metadata/
+            column_annotations
+                _start_time          
+    Encounter
+        /static/identifier/id
 Add:
-     static: Gender, Age,
-     dynamic: Days
-
-Linear interpolation between quantiles for measurement values
-
+     static: 
+        -Gender
+            /static/independent/data/
+                static_visit_person_gender_concept_name|MALE
+                static_visit_person_gender_concept_name|FEMALE
+        -Age (years)
+            /static/independent/data/
+                primary_age_at_visit_start_in_years_int
+            min/max scale [0,100] -> [0,1]
+     dynamic: 
+        -Time
+            /dynamic/data/carry_forward/metadata
+                column_annotations
+                    _sequence_time_delta
+                core_array
+        
+        -7 days, 7 days scaling
+            Current units are in seconds
+                Seconds in a day
+                    In [17]: 60*60*24
+                    Out[17]: 86400
+                Seconds in 7 days
+                    In [18]: 7*60*60*24
+                    Out[18]: 604800
+            [-604800,604800] -> [-1,1]
+    identifiers
+        -Person
+            /static/identifier/data/
+                column_annotations
+                    primary_person_id
+        -Encounter
+            /static/identifier/id
+            
 """
 
 
 def convert_binary_string_array(string_array):
+    """Convert b'string' to 'python3 string'"""
     return [str(c, "utf8", errors="replace") for c in string_array.tolist()]
 
 
 def slope(x1, x2, q1, q2):
+    """Linear slope equation"""
     return (q2 - q1) / (x2 - x1)
 
 
 def intercept(x1, x2, q1, q2):
+    """Linear intercept formula"""
     return q1 - slope(x1, x2, q1, q2) * x1
 
 
@@ -90,13 +129,12 @@ def quantile_linear_function(X, quantiles, list_values):
     return np.piecewise(X, condlist=conditions, funclist=linear_functions)
 
 
-def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samples=True):
+def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samples=True, include_non_quantiles=True):
 
     with h5py.File(hdf5_file_name, "r") as f5:
 
         # We need to normalize the data
         # but first we will split the data into test and training test
-        # For now we will split continuous regions
         # We want to make sure that a person is not split across the training and test split
 
         identifier_array_ds = f5["/static/identifier/data/core_array"][...]
@@ -145,14 +183,15 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
 
         _, n_sequence_len, n_types = data_ds.shape
 
-        numeric_features = ["measurement"]  # Features which we are going to scale using quantiles -1 to 1
+        numeric_features = ["measurement"]  # Features which we are going to scale using quantiles 0 to 1
         categorical_features = ["drug_exposure"]  # Cumulative features
 
         # Find start and end positions for numeric and categorical features
         numeric_features_pos_dict = {}
 
         for feature_class in numeric_features:
-            numeric_features_pos_dict[feature_class] = (class_labels.index(feature_class), len(class_labels) - class_labels_reverse.index(feature_class) - 1)
+            numeric_features_pos_dict[feature_class] = (class_labels.index(feature_class),
+                                                        len(class_labels) - class_labels_reverse.index(feature_class) - 1)
 
         categorical_features_pos_dict = {}
         for feature_class in categorical_features:
@@ -183,7 +222,7 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
             features = independent_static_features_names[static_feature]
             total_number_of_independent_features += len(features)
 
-        if recalculate_samples:
+        if recalculate_samples:  # Recalculate quantiles from the training set
 
             with h5py.File(output_file_name, "w") as f5w:
 
@@ -223,7 +262,6 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
                     else:  # Categorical
                         data_array = carry_ds[:, :, j]
 
-
                     data_list = []
                     for i in range(start_position_train, end_position_test):
 
@@ -259,7 +297,6 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
                                 freq_count_array[0, j] += 1
 
                     data_list = data_list[0:max_number_of_samples]
-
                     number_of_data_items = len(data_list)
                     samples_ds[0:number_of_data_items, j] = np.array(data_list)
                     samples_len_ds[0, j] = number_of_data_items
@@ -455,8 +492,8 @@ if __name__ == "__main__":
     arg_parse_obj.add_argument("-r", "--recalculate-samples", dest="recalculate_samples", default=False,
                                action="store_true", help="Recalculate samples")
     #arg_parse_obj.add_argument()
-    arg_obj = arg_parse_obj.parse_args()
-    main(arg_obj.hdf5_file_name, arg_obj.output_file_name, recalculate_samples=arg_obj.recalculate_samples)
-    # main("C:\\Users\\janos\\data\\ts\\ohdsi_sequences.hdf5.subset.hdf5",
-    #       "C:\\Users\\janos\\data\\ts\\processed_ohdsi_sequences.subset.hdf5",
-    #       recalculate_samples=True)
+    # arg_obj = arg_parse_obj.parse_args()
+    # main(arg_obj.hdf5_file_name, arg_obj.output_file_name, recalculate_samples=arg_obj.recalculate_samples)
+    main("C:\\Users\\janos\\data\\ts\\healthfacts\\ohdsi_sequences.hdf5.subset.hdf5",
+          "C:\\Users\\janos\\data\\ts\\healthfacts\\processed_ohdsi_sequences.subset.hdf5",
+          recalculate_samples=True)
