@@ -19,6 +19,8 @@ Training and test set assignment:
     
     Training and test split is based on person_id's being randomly assigned to training and test set
     
+        numpy.random.permutation(10)
+        or sort in order
     Person id
         /static/identifier/data/
             column_annotations
@@ -29,6 +31,11 @@ Training and test set assignment:
                 _start_time          
     Encounter
         /static/identifier/id
+        
+    Store array
+        /data/training_test_split/
+            core_array
+            column_annotations
 Add:
      static: 
         -Gender
@@ -62,6 +69,13 @@ Add:
                     primary_person_id
         -Encounter
             /static/identifier/id
+
+Write matrices into different formats
+    Quantiles - carry forward
+    Quantiles - changes
+    
+    Non-quantiles - carry forward
+    Non-quantiles - changes
             
 """
 
@@ -109,7 +123,6 @@ def quantile_linear_function(X, quantiles, list_values):
             linear_functions += [lambda_factory(x1, x2, q1, q2)]
         else:
             linear_functions += [lambda x: reverse_dict[x1][-1]] # Do the largest jump
-
         interpolating_ranges += [(x1, x2)]
 
     linear_functions = [lambda x: 0] + linear_functions + [lambda x: 1]  # set to 0 and 1 if above last quantiles
@@ -129,45 +142,129 @@ def quantile_linear_function(X, quantiles, list_values):
     return np.piecewise(X, condlist=conditions, funclist=linear_functions)
 
 
-def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samples=True, include_non_quantiles=True):
+def generate_training_list_indexes(f5a):
+    positions_array = f5a["/data/split/core_array"][...]
+    training_index_positions = positions_array[:, 1] == 0
+    training_indexes = positions_array[training_index_positions, :].ravel()
+    training_indexes = np.sort(training_indexes)
+    training_list_indexes = training_indexes.tolist()
+    return training_list_indexes
+
+
+def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split, randomly_reorder_patients=True):
 
     with h5py.File(hdf5_file_name, "r") as f5:
-
-        # We need to normalize the data
-        # but first we will split the data into test and training test
-        # We want to make sure that a person is not split across the training and test split
-
-        identifier_array_ds = f5["/static/identifier/data/core_array"][...]
-        identifier_array = np.array(identifier_array_ds, dtype="int").ravel()
-
-        n_size = identifier_array.shape[0]  # Number of encounters
-        unique_identifier_array = np.unique(identifier_array)
-        n_identifiers = unique_identifier_array.shape[0]
-        n_i_training_size = int(n_identifiers * training_split)
-
-        end_identifier_train = unique_identifier_array[n_i_training_size]
-        start_identifier_test = unique_identifier_array[n_i_training_size + 1]
-
-        start_position_test = identifier_array.tolist().index(start_identifier_test)
-        end_position_train = start_position_test - 1
-
-        # We won't have a perfect split percentage wise but we won't have a person split across training and test set
-
-        start_position_train = 0
-        end_position_test = n_size
-
-        # Now we are going to normalize the nan values in the training set to generate the distribution
-        # Our assumption here is that if we take a sample of 100,000 -  this should be big enough for getting
-        # accurate estimates on the upper and lower limits
-
-        max_number_of_samples = 100000
 
         # We need to know where a sequence ends
 
         metadata_labels = f5["/dynamic/changes/metadata/column_annotations"][...]
-        sequence_index = convert_binary_string_array(metadata_labels).index("_sequence_i")
-        metadata_ds = f5["/dynamic/changes/metadata/core_array"]
-        metadata_array = metadata_ds[:,:, sequence_index]
+        metadata_labels_list = convert_binary_string_array(metadata_labels)
+        sequence_index = metadata_labels_list.index("_sequence_i")
+        start_time_index = metadata_labels_list.index("_start_time")
+        delta_time_index = metadata_labels_list.index("_sequence_time_delta")
+
+        if "split" in steps_to_run:
+
+            metadata_ds = f5["/dynamic/changes/metadata/core_array"]
+            sequence_i_array = metadata_ds[:, :, sequence_index]
+
+            identifier_array_ds = f5["/static/identifier/data/core_array"][...]
+            identifier_array = np.array(identifier_array_ds, dtype="int").ravel()
+            n_size = identifier_array.shape[0]  # Number of encounters
+
+            unique_identifier_array = np.unique(identifier_array)
+            n_identifiers = unique_identifier_array.shape[0]
+            n_i_training_size = int(n_identifiers * training_fraction_split)
+            n_i_test_size = n_size - n_i_training_size
+
+            with h5py.File(output_file_name, "w") as f5w:
+
+                if randomly_reorder_patients:
+                    unique_identifier_array = unique_identifier_array[np.random.permutation(n_identifiers)]
+                else:
+                    unique_identifier_array = np.sort(unique_identifier_array)
+
+                train_test_dict = {}
+                train_id_list = []
+                test_id_list = []
+                for i in range(n_identifiers):
+                    if i < n_i_training_size:
+                        train_test_dict[unique_identifier_array[i]] = 0
+                        train_id_list += [unique_identifier_array[i]]
+                    else:
+                        train_test_dict[unique_identifier_array[i]] = 1
+                        test_id_list += [unique_identifier_array[i]]
+
+                identifier_count_dict = {}
+                for i in range(n_size):
+                    identifier = identifier_array[i]
+                    if identifier in identifier_count_dict:
+                        identifier_count_dict[identifier] += [i]
+                    else:
+                        identifier_count_dict[identifier] = [i]
+
+                identifier_sorted_dict = {}
+                # Resort the positions based on the time
+                start_time_array = f5["/dynamic/carry_forward/metadata/core_array"][:, start_time_index, 0].ravel()
+                for identifier in identifier_count_dict:
+                    identifier_positions = identifier_count_dict[identifier]
+                    start_time_list = []
+                    for position in identifier_positions:
+                        start_time_list += [start_time_array[position]]
+
+                    # print(start_time_list)
+                    if len(identifier_positions):
+                        new_positions_index = np.lexsort((start_time_list,))
+                        new_positions_list = [0] * len(new_positions_index)
+
+                        for i in range(len(identifier_positions)):
+                            new_positions_list[i] = identifier_positions[new_positions_index[i]]
+                    else:
+                        new_positions_list = identifier_positions
+
+                    #print(new_positions_list)
+                    identifier_sorted_dict[identifier] = new_positions_list
+
+                # We won't have a perfect split percentage but a person won't be split across the training and test set
+                start_identifier_test = unique_identifier_array[n_i_training_size + 1]
+                start_position_test = identifier_array.tolist().index(start_identifier_test)
+
+                test_id_list.sort()
+                train_id_list.sort()
+
+                new_ordering_array = np.zeros(shape=(n_size, 3))
+                train_i = 0
+                for uid in train_id_list:
+                    positions = identifier_sorted_dict[uid]
+                    for pos in positions:
+                        new_ordering_array[train_i, 0] = pos
+                        new_ordering_array[train_i, 1] = 0
+                        new_ordering_array[train_i, 2] = train_i
+                        train_i += 1
+
+                end_position_train = train_i - 1
+                start_position_train = 0
+                end_position_test = n_size
+
+                test_i = 0
+                for uid in test_id_list:
+                    positions = identifier_sorted_dict[uid]
+                    for pos in positions:
+                        new_ordering_array[train_i + test_i, 0] = pos
+                        new_ordering_array[train_i + test_i, 1] = 1
+                        new_ordering_array[train_i + test_i, 2] = test_i
+                        test_i += 1
+
+                # Step 5:
+
+                training_test_group = f5w.create_group("/data/split/")
+                training_test_ds = training_test_group.create_dataset("core_array", dtype="int", shape=(n_size, 3))
+
+                training_test_ds[...] = new_ordering_array[...]
+
+                training_test_ca_ds = training_test_group.create_dataset("column_annotations", dtype="S16", shape=(1, 3))
+                tt_ca_list = ["source_index", "training_test_0_1", "new_positions"]
+                training_test_ca_ds[...] = np.array(tt_ca_list, dtype="S16")
 
         data_ds = f5["/dynamic/changes/data/core_array"]
         carry_ds = f5["/dynamic/carry_forward/data/core_array"]  # For categorical
@@ -192,14 +289,13 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
         for feature_class in numeric_features:
             numeric_features_pos_dict[feature_class] = (class_labels.index(feature_class),
                                                         len(class_labels) - class_labels_reverse.index(feature_class) - 1)
-
         categorical_features_pos_dict = {}
         for feature_class in categorical_features:
-            categorical_features_pos_dict[feature_class] = (class_labels.index(feature_class), len(class_labels) - class_labels_reverse.index(feature_class) - 1)
+            categorical_features_pos_dict[feature_class] = (class_labels.index(feature_class),
+                                                            len(class_labels) - class_labels_reverse.index(feature_class) - 1)
 
         # We are going to treat numeric features and categorical features differently
         position_class_dict = {}
-
         for feature_class in categorical_features_pos_dict:
             feature_range = categorical_features_pos_dict[feature_class]
             for i in range(feature_range[0], feature_range[1] + 1):
@@ -222,27 +318,32 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
             features = independent_static_features_names[static_feature]
             total_number_of_independent_features += len(features)
 
-        if recalculate_samples:  # Recalculate quantiles from the training set
+        # Compute quantiles
+        if "calculate" in steps_to_run:
+            # Now we are going to normalize the nan values in the training set to generate the distribution
+            # Our assumption here is that if we take a sample of 100,000 -  this should be big enough for getting
+            # accurate estimates on the upper and lower limits
 
-            with h5py.File(output_file_name, "w") as f5w:
+            max_number_of_samples = 100000
+
+            with h5py.File(output_file_name, "a") as f5a:
 
                 # We will store the samples so we can use for later transforms
-
-                samples_group = f5w.create_group("/data/samples")
+                samples_group = f5a.create_group("/data/samples")
                 samples_ds = samples_group.create_dataset("measures", shape=(max_number_of_samples, n_types))
                 samples_len_ds = samples_group.create_dataset("n", shape=(1, n_types))
 
                 samples_labels_ds = samples_group.create_dataset("labels", shape=data_labels.shape, dtype=data_labels.dtype)
                 samples_labels_ds[...] = data_labels[...]
 
-                seq_len_group = f5w.create_group("/data/sequence_length/")
-                freq_group = f5w.create_group("/data/frequency")
+                seq_len_group = f5a.create_group("/data/sequence_length/")
+                freq_group = f5a.create_group("/data/frequency")
                 freq_count_ds = freq_group.create_dataset("count", shape=(1, n_types))
                 freq_count_array = np.zeros(shape=(1, n_types))
                 seq_len_ds = seq_len_group.create_dataset("all", shape=(1, n_size))
 
                 # We compute quantiles from the data
-                quantile_group = f5w.create_group("/data/summary/quantiles/")
+                quantile_group = f5a.create_group("/data/summary/quantiles/")
                 quantiles_list = [0.001, 0.01, 0.05, 0.1, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75, 0.8, 0.9, 0.95,
                                   0.99, 0.999]
 
@@ -250,6 +351,8 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
                 quantiles_values_ds[...] = quantiles_list
 
                 quantiles_computed_ds = quantile_group.create_dataset("computed", shape=(len(quantiles_list), n_types))
+
+                training_list_indexes = generate_training_list_indexes(f5a)
 
                 # Collect sequences of measurement from training data to generate distributions
                 # This step here needs to be optimized for larger data sets
@@ -263,9 +366,11 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
                         data_array = carry_ds[:, :, j]
 
                     data_list = []
-                    for i in range(start_position_train, end_position_test):
+                    for k in range(end_position_test):
 
-                        sequence_array = metadata_array[i, :]
+                        #print(training_list_indexes)
+                        i = int(training_list_indexes[k])  # We get the original positions
+                        sequence_array = sequence_i_array[i, :]
                         max_sequence_i = int(np.max(sequence_array))
                         seq_len_ds[0, i] = max_sequence_i + 1
 
@@ -308,180 +413,188 @@ def main(hdf5_file_name, output_file_name, training_split=0.80, recalculate_samp
 
         # We will linear interpolate for quantiles
 
-        # Measurements that occur less than a set threshold will be dropped from the test set
-        feature_threshold = 0.005
+        if "write" in steps_to_run:
+            # Measurements that occur less than a set threshold will be dropped from the test set
+            feature_threshold = 0.005
+            with h5py.File(output_file_name, "a") as f5a:  # We reopen the processed output HDF5 file
+                labels = convert_binary_string_array(f5a["/data/samples/labels"][...])
+                quantiles_values = f5a["/data/summary/quantiles/values"][...].ravel()
+                quantiles_computed_ds = f5a["/data/summary/quantiles/computed"]
+                for i in range(len(labels)):
+                    n_ds = f5a["/data/samples/n"]
+                    samples_ds = f5a["/data/samples/measures"]
+                    sequence_length = int(n_ds[0, i])
+                    if sequence_length:
+                        series = samples_ds[0:sequence_length, i]
+                        quantiles_computed_ds[:, i] = np.quantile(series, quantiles_values)
 
-        with h5py.File(output_file_name, "a") as f5a:  # We reopen the processed output HDF5 file
-            labels = convert_binary_string_array(f5a["/data/samples/labels"][...])
-            quantiles_values = f5a["/data/summary/quantiles/values"][...].ravel()
-            quantiles_computed_ds = f5a["/data/summary/quantiles/computed"]
-            for i in range(len(labels)):
-                n_ds = f5a["/data/samples/n"]
-                samples_ds = f5a["/data/samples/measures"]
-                sequence_length = int(n_ds[0, i])
-                if sequence_length:
-                    series = samples_ds[0:sequence_length, i]
+                count_feature_threshold = int(n_i_training_size * feature_threshold)
 
-                    quantiles_computed_ds[:, i] = np.quantile(series, quantiles_values)
+                frequency_count = f5a["/data/frequency/count"][...]
+                feature_mask_raw = frequency_count >= count_feature_threshold  # Just based on counts
+                feature_mask = feature_mask_raw[0]
 
-            count_feature_threshold = int(n_i_training_size * feature_threshold)
+                for feature in features_to_exclude:
+                    if feature in dynamic_labels:
+                        feature_mask[dynamic_labels.index(feature)] = 0
 
-            frequency_count = f5a["/data/frequency/count"][...]
-            feature_mask_raw = frequency_count >= count_feature_threshold  # Just based on counts
-            feature_mask = feature_mask_raw[0]
+                selected_features = np.array(labels)[feature_mask]
+                if "processed" not in list(f5a["/data/"]):
+                    f5a.create_group("/data/processed/train/")
+                    f5a.create_group("/data/processed/test/")
 
-            for feature in features_to_exclude:
-                if feature in dynamic_labels:
-                    feature_mask[dynamic_labels.index(feature)] = 0
+                train_processed_group = f5a["/data/processed/train/"]
+                test_processed_group = f5a["/data/processed/test/"]
 
-            selected_features = np.array(labels)[feature_mask]
-            if "processed" not in list(f5a["/data/"]):
-                f5a.create_group("/data/processed/train/")
-                f5a.create_group("/data/processed/test/")
+                quantiles = f5a["/data/summary/quantiles/computed"][...]
+                selected_quantiles = quantiles[:, feature_mask]
 
-            train_processed_group = f5a["/data/processed/train/"]
-            test_processed_group = f5a["/data/processed/test/"]
+                input_dependent_shape = f5["/static/dependent/data/core_array"].shape
+                n_target_columns = input_dependent_shape[1]
 
-            quantiles = f5a["/data/summary/quantiles/computed"][...]
-            selected_quantiles = quantiles[:, feature_mask]
+                train_n_rows = end_position_train + 1
+                test_n_rows = end_position_test - start_position_test
 
-            input_dependent_shape = f5["/static/dependent/data/core_array"].shape
-            n_target_columns = input_dependent_shape[1]
+                carry_forward_ds = f5["/dynamic/carry_forward/data/core_array"]
 
-            train_n_rows = end_position_train + 1
-            test_n_rows = end_position_test - start_position_test
+                carry_forward_shape = carry_forward_ds.shape
+                number_of_time_steps = carry_forward_shape[1]
 
-            carry_forward_ds = f5["/dynamic/carry_forward/data/core_array"]
+                train_shape = (train_n_rows, number_of_time_steps, len(selected_features))
+                test_shape = (test_n_rows, number_of_time_steps, len(selected_features))
 
-            carry_forward_shape = carry_forward_ds.shape
-            number_of_time_steps = carry_forward_shape[1]
+                train_target_shape = (train_n_rows, n_target_columns)
+                test_target_shape = (test_n_rows, n_target_columns)
 
-            train_shape = (train_n_rows, number_of_time_steps, len(selected_features))
-            test_shape = (test_n_rows, number_of_time_steps, len(selected_features))
+                if "sequence" not in list(f5a["/data/processed/train/"]):
+                    f5a.create_group("/data/processed/train/sequence/")
+                    f5a.create_group("/data/processed/train/target/")
 
-            train_target_shape = (train_n_rows, n_target_columns)
-            test_target_shape = (test_n_rows, n_target_columns)
+                    f5a.create_group("/data/processed/test/sequence/")
+                    f5a.create_group("/data/processed/test/target/")
 
-            if "sequence" not in list(f5a["/data/processed/train/"]):
-                f5a.create_group("/data/processed/train/sequence/")
-                f5a.create_group("/data/processed/train/target/")
+                if "core_array" in list(f5a["/data/processed/train/sequence"]):
+                    del f5a["/data/processed/train/sequence/core_array"]
+                    del f5a["/data/processed/train/sequence/column_annotations"]
+                    del f5a["/data/processed/train/target/core_array"]
+                    del f5a["/data/processed/train/target/column_annotations"]
 
-                f5a.create_group("/data/processed/test/sequence/")
-                f5a.create_group("/data/processed/test/target/")
+                    del f5a["/data/processed/test/sequence/core_array"]
+                    del f5a["/data/processed/test/sequence/column_annotations"]
+                    del f5a["/data/processed/test/target/core_array"]
+                    del f5a["/data/processed/test/target/column_annotations"]
 
-            if "core_array" in list(f5a["/data/processed/train/sequence"]):
-                del f5a["/data/processed/train/sequence/core_array"]
-                del f5a["/data/processed/train/sequence/column_annotations"]
-                del f5a["/data/processed/train/target/core_array"]
-                del f5a["/data/processed/train/target/column_annotations"]
+                train_seq_ds = f5a["/data/processed/train/sequence/"].create_dataset("core_array", shape=train_shape,
+                                                                                     dtype="float32")
 
-                del f5a["/data/processed/test/sequence/core_array"]
-                del f5a["/data/processed/test/sequence/column_annotations"]
-                del f5a["/data/processed/test/target/core_array"]
-                del f5a["/data/processed/test/target/column_annotations"]
+                train_seq_label_ds = f5a["/data/processed/train/sequence"].create_dataset("column_annotations",
+                                                                                          shape=(1, len(selected_features)),
+                                                                                          dtype=data_labels.dtype)
 
-            train_seq_ds = f5a["/data/processed/train/sequence/"].create_dataset("core_array", shape=train_shape,
-                                                                                 dtype="float32")
+                train_target_ds = f5a["/data/processed/train/target/"].create_dataset("core_array", shape=train_target_shape,
+                                                                                      dtype="int32")
 
-            train_seq_label_ds = f5a["/data/processed/train/sequence"].create_dataset("column_annotations",
-                                                                                      shape=(1, len(selected_features)),
-                                                                                      dtype=data_labels.dtype)
+                train_target_label_ds = f5a["/data/processed/train/target/"].create_dataset("column_annotations",
+                                                                                            shape=(1, train_target_shape[1]),
+                                                                                            dtype=data_labels.dtype)
 
-            train_target_ds = f5a["/data/processed/train/target/"].create_dataset("core_array", shape=train_target_shape,
-                                                                                  dtype="int32")
+                test_seq_ds = f5a["/data/processed/test/sequence/"].create_dataset("core_array", shape=test_shape,
+                                                                                   dtype="float32")
 
-            train_target_label_ds = f5a["/data/processed/train/target/"].create_dataset("column_annotations",
-                                                                                        shape=(1, train_target_shape[1]),
+                test_seq_label_ds = f5a["/data/processed/test/sequence"].create_dataset("column_annotations",
+                                                                                        shape=(1, len(selected_features)),
                                                                                         dtype=data_labels.dtype)
 
-            test_seq_ds = f5a["/data/processed/test/sequence/"].create_dataset("core_array", shape=test_shape,
-                                                                               dtype="float32")
+                test_target_ds = f5a["/data/processed/test/target/"].create_dataset("core_array", shape=test_target_shape,
+                                                                                    dtype="int32")
 
-            test_seq_label_ds = f5a["/data/processed/test/sequence"].create_dataset("column_annotations",
-                                                                                    shape=(1, len(selected_features)),
-                                                                                    dtype=data_labels.dtype)
+                test_target_label_ds = f5a["/data/processed/test/target/"].create_dataset("column_annotations",
+                                                                                          shape=(1, test_target_shape[1]),
+                                                                                          dtype=data_labels.dtype)
 
-            test_target_ds = f5a["/data/processed/test/target/"].create_dataset("core_array", shape=test_target_shape,
-                                                                                dtype="int32")
+                train_seq_label_ds[...] = np.array(selected_features, dtype=data_labels.dtype)
+                test_seq_label_ds[...] = np.array(selected_features, dtype=data_labels.dtype)
 
-            test_target_label_ds = f5a["/data/processed/test/target/"].create_dataset("column_annotations",
-                                                                                      shape=(1, test_target_shape[1]),
-                                                                                      dtype=data_labels.dtype)
+                # Target labels
+                train_target_label_ds[...] = f5["/static/dependent/data/column_annotations"][...]
+                test_target_label_ds[...] = f5["/static/dependent/data/column_annotations"][...]
 
-            train_seq_label_ds[...] = np.array(selected_features, dtype=data_labels.dtype)
-            test_seq_label_ds[...] = np.array(selected_features, dtype=data_labels.dtype)
+                computed_quantiles = quantiles_computed_ds[:, feature_mask]
+                quantile_values = f5a["/data/summary/quantiles/values"][...]
 
-            # Populate targets
-            train_target_label_ds[...] = f5["/static/dependent/data/column_annotations"][...]
-            test_target_label_ds[...] = f5["/static/dependent/data/column_annotations"][...]
+                # Builds the independent sequence matrices for prediction
+                positions_array = f5a["/data/split/core_array"][...]
 
-            train_target_ds[...] = f5["/static/dependent/data/core_array"][start_position_train:end_position_train+1, :]
+                for k in range(n_size):
 
-            test_target_ds[...] = f5["/static/dependent/data/core_array"][start_position_test:end_position_test, :]
+                    # Setup indexes
+                    i = int(positions_array[k, 0])
+                    is_test = int(positions_array[k, 1])
+                    pos_2_write = int(positions_array[k, 2])
 
-            computed_quantiles = quantiles_computed_ds[:, feature_mask]
-            quantile_values = f5a["/data/summary/quantiles/values"][...]
+                    sequence_length = int(f5a["/data/sequence_length/all"][0, i])
+                    if sequence_length == 0:
+                        sequence_length = 1
 
-            # Builds the independent sequence matrices for prediction
-            for i in range(n_size):
-                sequence_length = int(f5a["/data/sequence_length/all"][0, i])
-                i_carry_forward_array = carry_forward_ds[i, 0:sequence_length, feature_mask]
+                    i_carry_forward_array = carry_forward_ds[i, 0:sequence_length, feature_mask]
+                    last_step = i_carry_forward_array[-1, :]
 
-                last_step = i_carry_forward_array[-1, :]
+                    has_feature = np.logical_not(np.isnan(last_step))
+                    feature_position = np.array(range(0, i_carry_forward_array.shape[1]))
+                    original_feature_position = feature_position[has_feature]
+                    quantile_features = computed_quantiles[:, has_feature]
 
-                has_feature = np.logical_not(np.isnan(last_step))
-                feature_position = np.array(range(0, i_carry_forward_array.shape[1]))
-                original_feature_position = feature_position[has_feature]
-                quantile_features = computed_quantiles[:, has_feature]
+                    i_carry_forward_feature_array = i_carry_forward_array[:, has_feature]
 
-                i_carry_forward_feature_array = i_carry_forward_array[:, has_feature]
+                    t_carry_forward_array = np.zeros(shape=(sequence_length, np.sum(feature_mask)), dtype=i_carry_forward_feature_array.dtype)
+                    t_carry_forward_array[t_carry_forward_array == 0] = np.nan
 
-                t_carry_forward_array = np.zeros(shape=(sequence_length, np.sum(feature_mask)), dtype=i_carry_forward_feature_array.dtype)
-                t_carry_forward_array[t_carry_forward_array == 0] = np.nan
+                    for j in range(quantile_features.shape[1]):
 
-                for j in range(quantile_features.shape[1]):
+                        has_measured_values = np.logical_not(np.isnan(i_carry_forward_feature_array[:, j]))
 
-                    has_measured_values = np.logical_not(np.isnan(i_carry_forward_feature_array[:, j]))
+                        linear_quantile = quantile_linear_function(i_carry_forward_feature_array[has_measured_values, j],
+                                                                   quantile_values.tolist()[0],
+                                                                   quantile_features[:, j].tolist())
+                        t_carry_forward_array[has_measured_values, original_feature_position[j]] = linear_quantile
 
-                    linear_quantile = quantile_linear_function(i_carry_forward_feature_array[has_measured_values, j],
-                                                               quantile_values.tolist()[0],
-                                                               quantile_features[:, j].tolist())
-                    t_carry_forward_array[has_measured_values, original_feature_position[j]] = linear_quantile
+                    for feature_class in categorical_features_pos_dict:
+                        feature_class_range = categorical_features_pos_dict[feature_class]
 
-                for feature_class in categorical_features_pos_dict:
-                    feature_class_range = categorical_features_pos_dict[feature_class]
-                    #print(feature_class_range)
+                    for feature_class in numeric_features_pos_dict:
+                        feature_class_range = numeric_features_pos_dict[feature_class]
 
-                for feature_class in numeric_features_pos_dict:
-                    feature_class_range = numeric_features_pos_dict[feature_class]
-                    #print(feature_class_range)
+                    t_carry_forward_array[np.isnan(t_carry_forward_array)] = 0  # np.isnan = 0.5 for numeric values
 
-                t_carry_forward_array[np.isnan(t_carry_forward_array)] = 0  # np.isnan = 0.5 for numeric values
+                    # We need to split into separate
+                    if is_test:
+                        test_seq_ds[pos_2_write, 0:sequence_length, :] = t_carry_forward_array
 
-                # We need to split into separate
-                if i <= end_position_train:
-                    train_seq_ds[i, 0:sequence_length, :] = t_carry_forward_array
-                else:
-                    test_seq_ds[i - start_position_test, 0:sequence_length, :] = t_carry_forward_array
+                        test_target_ds[pos_2_write, :] = f5["/static/dependent/data/core_array"][i, :]  # Test DX
 
-                # TODO: Add in static variables to time
-                # For age scale between 0 and 100
+                    else:
+                        train_seq_ds[pos_2_write, 0:sequence_length, :] = t_carry_forward_array
 
-                # TODO Add in identifiers
-                # primary_person_id
-                # /static/identifier/data/core_array
+                        train_target_ds[pos_2_write, :] = f5["/static/dependent/data/core_array"][i, :] # Target DX
 
-                # /static/identifier/id/core_array
+                    # TODO: Add in static variables to time
+                    # For age scale between 0 and 100
 
-                # TODO: Add non scaled data
+                    # TODO Add in identifiers
+                    # primary_person_id
+                    # /static/identifier/data/core_array
 
-                # TODO: Add in metadata about sequences
+                    # /static/identifier/id/core_array
 
-                # /dynamic/carry_forward/metadata/core_array
-                # _sequence_time_delta _sequence_i _start_time _time_span
+                    # TODO: Add non scaled data
 
-                if i % 100 == 0:
-                    print("Wrote %s matrices" % i)
+                    # TODO: Add in metadata about sequences
+
+                    # /dynamic/carry_forward/metadata/core_array
+                    # _sequence_time_delta _sequence_i _start_time _time_span
+
+                    if i % 100 == 0:
+                        print("Wrote %s matrices" % i)
 
 
 if __name__ == "__main__":
@@ -489,11 +602,35 @@ if __name__ == "__main__":
     arg_parse_obj = argparse.ArgumentParser(description="Pre-process HDF5 for applications")
     arg_parse_obj.add_argument("-f", "--hdf5-file-name", dest="hdf5_file_name")
     arg_parse_obj.add_argument("-o", "--output-hdf5-file-name", dest="output_file_name")
-    arg_parse_obj.add_argument("-r", "--recalculate-samples", dest="recalculate_samples", default=False,
-                               action="store_true", help="Recalculate samples")
-    #arg_parse_obj.add_argument()
-    # arg_obj = arg_parse_obj.parse_args()
-    # main(arg_obj.hdf5_file_name, arg_obj.output_file_name, recalculate_samples=arg_obj.recalculate_samples)
-    main("C:\\Users\\janos\\data\\ts\\healthfacts\\ohdsi_sequences.hdf5.subset.hdf5",
-          "C:\\Users\\janos\\data\\ts\\healthfacts\\processed_ohdsi_sequences.subset.hdf5",
-          recalculate_samples=True)
+    arg_parse_obj.add_argument("-s", "--split-into-training-test-set", dest="split_training_test", default=False,
+                               action="store_true")
+    arg_parse_obj.add_argument("-r", "--recalculate-quantiles", dest="recalculate_samples", default=False,
+                               action="store_true", help="Calculates the quantiles for measured values")
+    arg_parse_obj.add_argument("-w", "--write-matrices", dest="write_matrices", default=False, action="store_true")
+    arg_parse_obj.add_argument("-a", "--run-all-steps", dest="run_all_steps", default=False, action="store_true",
+                               help="Run all steps: split into training and test, recalculate the quantiles, and "
+                                    "write matrices")
+    arg_parse_obj.add_argument("--fraction-training", dest="fraction_training", default="0.8")
+
+    arg_obj = arg_parse_obj.parse_args()
+
+    steps_to_run = []
+    if arg_obj.run_all_steps:
+        steps_to_run = ["split", "calculate", "write"]
+    elif arg_obj.split_training_test:
+        steps_to_run = ["split"]
+    elif arg_obj.recalculate_samples:
+        steps_to_run = ["calculate"]
+    elif arg_obj.recaculate_samples:
+        steps_to_run = ["write"]
+    else:
+        raise RuntimeError("Specify either -s, -r, or -w")
+
+    main(arg_obj.hdf5_file_name, arg_obj.output_file_name, steps_to_run=steps_to_run,
+         training_fraction_split=float(arg_obj.fraction_training))
+
+    # main("C:\\Users\\janos\\data\\ts\\healthfacts\\ohdsi_sequences.hdf5.subset.hdf5",
+    #        "C:\\Users\\janos\\data\\ts\\healthfacts\\processed_ohdsi_sequences.subset.hdf5",
+    #        steps_to_run=["split", "calculate", "write"], training_fraction_split=0.8)
+
+    #["split", "calculate", "write"]
