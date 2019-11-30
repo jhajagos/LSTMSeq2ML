@@ -147,7 +147,9 @@ def get_variables(f5a):
     return int(variables[0, 0]), int(variables[0, 1]), int(variables[0, 2]), int(variables[0, 3])
 
 
-def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split, randomly_reorder_patients=True):
+def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split, randomly_reorder_patients=True,
+         compress_alg="gzip"
+         ):
 
     with h5py.File(hdf5_file_name, "r") as f5:
 
@@ -337,7 +339,8 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
 
                 # We will store the samples so we can use for later transforms
                 samples_group = f5a.create_group("/data/samples")
-                samples_ds = samples_group.create_dataset("measures", shape=(max_number_of_samples, n_types))
+                samples_ds = samples_group.create_dataset("measures", shape=(max_number_of_samples, n_types),
+                                                          compression=compress_alg)
                 samples_len_ds = samples_group.create_dataset("n", shape=(1, n_types))
 
                 samples_labels_ds = samples_group.create_dataset("labels", shape=data_labels.shape, dtype=data_labels.dtype)
@@ -478,8 +481,9 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                 carry_forward_shape = carry_forward_ds.shape
                 number_of_time_steps = carry_forward_shape[1]
 
-                train_shape = (train_n_rows, number_of_time_steps, len(selected_features))
-                test_shape = (test_n_rows, number_of_time_steps, len(selected_features))
+                number_of_custom_features = 0
+                train_shape = (train_n_rows, number_of_time_steps, len(selected_features) + number_of_custom_features)
+                test_shape = (test_n_rows, number_of_time_steps, len(selected_features) + number_of_custom_features)
 
                 train_target_shape = (train_n_rows, n_target_columns)
                 test_target_shape = (test_n_rows, n_target_columns)
@@ -503,25 +507,33 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                     del f5a["/data/processed/test/target/column_annotations"]
 
                 train_seq_ds = f5a["/data/processed/train/sequence/"].create_dataset("core_array", shape=train_shape,
-                                                                                     dtype="float32")
+                                                                                     dtype="float32",
+                                                                                     compression=compress_alg
+                                                                                     )
 
                 train_seq_label_ds = f5a["/data/processed/train/sequence"].create_dataset("column_annotations",
                                                                                           shape=(1, len(selected_features)),
                                                                                           dtype=data_labels.dtype)
 
                 train_target_ds = f5a["/data/processed/train/target/"].create_dataset("core_array", shape=train_target_shape,
-                                                                                      dtype="int32")
+                                                                                      dtype="int32",
+                                                                                      compression=compress_alg
+                                                                                      )
 
                 train_target_label_ds = f5a["/data/processed/train/target/"].create_dataset("column_annotations",
                                                                                             shape=(1, train_target_shape[1]),
-                                                                                            dtype=data_labels.dtype)
+                                                                                            dtype=data_labels.dtype,
+                                                                                            compression=compress_alg
+                                                                                            )
 
                 test_seq_ds = f5a["/data/processed/test/sequence/"].create_dataset("core_array", shape=test_shape,
-                                                                                   dtype="float32")
+                                                                                   dtype="float32",
+                                                                                   compression=compress_alg)
 
                 test_seq_label_ds = f5a["/data/processed/test/sequence"].create_dataset("column_annotations",
                                                                                         shape=(1, len(selected_features)),
-                                                                                        dtype=data_labels.dtype)
+                                                                                        dtype=data_labels.dtype,
+                                                                                        )
 
                 test_target_ds = f5a["/data/processed/test/target/"].create_dataset("core_array", shape=test_target_shape,
                                                                                     dtype="int32")
@@ -542,6 +554,7 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
 
                 # Builds the independent sequence matrices for prediction
                 positions_array = f5a["/data/split/details/core_array"][...]
+                seq_len_ds = f5a["/data/sequence_length/all"]
                 max_sequence_array = seq_len_ds[0, :]
 
                 for k in range(n_size):
