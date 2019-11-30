@@ -142,13 +142,9 @@ def quantile_linear_function(X, quantiles, list_values):
     return np.piecewise(X, condlist=conditions, funclist=linear_functions)
 
 
-def generate_training_list_indexes(f5a):
-    positions_array = f5a["/data/split/core_array"][...]
-    training_index_positions = positions_array[:, 1] == 0
-    training_indexes = positions_array[training_index_positions, :].ravel()
-    training_indexes = np.sort(training_indexes)
-    training_list_indexes = training_indexes.tolist()
-    return training_list_indexes
+def get_variables(f5a):
+    variables = f5a["/data/split/variables/core_array"][...]
+    return int(variables[0, 0]), int(variables[0, 1]), int(variables[0, 2]), int(variables[0, 3])
 
 
 def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split, randomly_reorder_patients=True):
@@ -164,9 +160,6 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
         delta_time_index = metadata_labels_list.index("_sequence_time_delta")
 
         if "split" in steps_to_run:
-
-            metadata_ds = f5["/dynamic/changes/metadata/core_array"]
-            sequence_i_array = metadata_ds[:, :, sequence_index]
 
             identifier_array_ds = f5["/static/identifier/data/core_array"][...]
             identifier_array = np.array(identifier_array_ds, dtype="int").ravel()
@@ -222,12 +215,10 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                     else:
                         new_positions_list = identifier_positions
 
-                    #print(new_positions_list)
                     identifier_sorted_dict[identifier] = new_positions_list
 
                 # We won't have a perfect split percentage but a person won't be split across the training and test set
                 start_identifier_test = unique_identifier_array[n_i_training_size + 1]
-                start_position_test = identifier_array.tolist().index(start_identifier_test)
 
                 test_id_list.sort()
                 train_id_list.sort()
@@ -244,6 +235,7 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
 
                 end_position_train = train_i - 1
                 start_position_train = 0
+                start_position_test = len(train_id_list)
                 end_position_test = n_size
 
                 test_i = 0
@@ -255,9 +247,8 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                         new_ordering_array[train_i + test_i, 2] = test_i
                         test_i += 1
 
-                # Step 5:
-
-                training_test_group = f5w.create_group("/data/split/")
+                # Store ordering of randomization
+                training_test_group = f5w.create_group("/data/split/details/")
                 training_test_ds = training_test_group.create_dataset("core_array", dtype="int", shape=(n_size, 3))
 
                 training_test_ds[...] = new_ordering_array[...]
@@ -265,6 +256,20 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                 training_test_ca_ds = training_test_group.create_dataset("column_annotations", dtype="S16", shape=(1, 3))
                 tt_ca_list = ["source_index", "training_test_0_1", "new_positions"]
                 training_test_ca_ds[...] = np.array(tt_ca_list, dtype="S16")
+
+                # Store variables
+                training_test_var_group = f5w.create_group("/data/split/variables/")
+                dvg_ca_label_ds = training_test_var_group.create_dataset("column_annotations", shape=(1, 4), dtype="S16")
+                dvg_ca_ds = training_test_var_group.create_dataset("core_array", shape=(1, 4), dtype="int")
+
+                dvg_ca_label_ds[0, 0] = b"n_size"
+                dvg_ca_ds[0, 0] = n_size
+                dvg_ca_label_ds[0, 1] = b"end_position_train"
+                dvg_ca_ds[0, 1] = end_position_train
+                dvg_ca_label_ds[0, 2] = b"start_position_test"
+                dvg_ca_ds[0, 2] = start_position_test
+                dvg_ca_label_ds[0, 3] = b"end_position_test"
+                dvg_ca_ds[0, 3] = end_position_test
 
         data_ds = f5["/dynamic/changes/data/core_array"]
         carry_ds = f5["/dynamic/carry_forward/data/core_array"]  # For categorical
@@ -328,6 +333,8 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
 
             with h5py.File(output_file_name, "a") as f5a:
 
+                n_size, end_position_train, start_position_test, end_position_test = get_variables(f5a)
+
                 # We will store the samples so we can use for later transforms
                 samples_group = f5a.create_group("/data/samples")
                 samples_ds = samples_group.create_dataset("measures", shape=(max_number_of_samples, n_types))
@@ -352,10 +359,19 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
 
                 quantiles_computed_ds = quantile_group.create_dataset("computed", shape=(len(quantiles_list), n_types))
 
-                training_list_indexes = generate_training_list_indexes(f5a)
+                training_list_indexes = f5a["/data/split/details/core_array"][0:end_position_train, 0].tolist()
 
                 # Collect sequences of measurement from training data to generate distributions
                 # This step here needs to be optimized for larger data sets
+
+                metadata_ds = f5["/dynamic/changes/metadata/core_array"]
+                sequence_i_array = metadata_ds[:, :, sequence_index]
+
+                for i in range(n_size):
+                    sequence_array = sequence_i_array[i, :]
+                    max_sequence_i = int(np.max(sequence_array))
+                    seq_len_ds[0, i] = max_sequence_i
+
                 for j in range(n_types):
 
                     feature_type = position_class_dict[j]
@@ -366,13 +382,11 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                         data_array = carry_ds[:, :, j]
 
                     data_list = []
-                    for k in range(end_position_test):
+                    for k in range(end_position_train):
 
-                        #print(training_list_indexes)
                         i = int(training_list_indexes[k])  # We get the original positions
-                        sequence_array = sequence_i_array[i, :]
-                        max_sequence_i = int(np.max(sequence_array))
-                        seq_len_ds[0, i] = max_sequence_i + 1
+
+                        max_sequence_i = int(seq_len_ds[0, i])
 
                         if len(data_list) > max_number_of_samples:
                             break
@@ -417,6 +431,7 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
             # Measurements that occur less than a set threshold will be dropped from the test set
             feature_threshold = 0.005
             with h5py.File(output_file_name, "a") as f5a:  # We reopen the processed output HDF5 file
+                n_size, end_position_train, start_position_test, end_position_test = get_variables(f5a)
                 labels = convert_binary_string_array(f5a["/data/samples/labels"][...])
                 quantiles_values = f5a["/data/summary/quantiles/values"][...].ravel()
                 quantiles_computed_ds = f5a["/data/summary/quantiles/computed"]
@@ -523,7 +538,7 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                 quantile_values = f5a["/data/summary/quantiles/values"][...]
 
                 # Builds the independent sequence matrices for prediction
-                positions_array = f5a["/data/split/core_array"][...]
+                positions_array = f5a["/data/split/details/core_array"][...]
 
                 for k in range(n_size):
 
@@ -575,7 +590,7 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                     else:
                         train_seq_ds[pos_2_write, 0:sequence_length, :] = t_carry_forward_array
 
-                        train_target_ds[pos_2_write, :] = f5["/static/dependent/data/core_array"][i, :] # Target DX
+                        train_target_ds[pos_2_write, :] = f5["/static/dependent/data/core_array"][i, :]  # Target DX
 
                     # TODO: Add in static variables to time
                     # For age scale between 0 and 100
@@ -593,8 +608,8 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                     # /dynamic/carry_forward/metadata/core_array
                     # _sequence_time_delta _sequence_i _start_time _time_span
 
-                    if i % 100 == 0:
-                        print("Wrote %s matrices" % i)
+                    if k % 100 == 0:
+                        print("Wrote %s matrices" % k)
 
 
 if __name__ == "__main__":
@@ -614,23 +629,27 @@ if __name__ == "__main__":
 
     arg_obj = arg_parse_obj.parse_args()
 
-    steps_to_run = []
-    if arg_obj.run_all_steps:
-        steps_to_run = ["split", "calculate", "write"]
-    elif arg_obj.split_training_test:
-        steps_to_run = ["split"]
-    elif arg_obj.recalculate_samples:
-        steps_to_run = ["calculate"]
-    elif arg_obj.recaculate_samples:
-        steps_to_run = ["write"]
-    else:
-        raise RuntimeError("Specify either -s, -r, or -w")
-
-    main(arg_obj.hdf5_file_name, arg_obj.output_file_name, steps_to_run=steps_to_run,
-         training_fraction_split=float(arg_obj.fraction_training))
+    # steps_to_run = []
+    # if arg_obj.run_all_steps:
+    #     steps_to_run = ["split", "calculate", "write"]
+    # elif arg_obj.split_training_test:
+    #     steps_to_run = ["split"]
+    # elif arg_obj.recalculate_samples:
+    #     steps_to_run = ["calculate"]
+    # elif arg_obj.write_matrices:
+    #     steps_to_run = ["write"]
+    # else:
+    #     raise RuntimeError("Specify either -s, -r, or -w")
+    #
+    # main(arg_obj.hdf5_file_name, arg_obj.output_file_name, steps_to_run=steps_to_run,
+    #      training_fraction_split=float(arg_obj.fraction_training))
 
     # main("C:\\Users\\janos\\data\\ts\\healthfacts\\ohdsi_sequences.hdf5.subset.hdf5",
     #        "C:\\Users\\janos\\data\\ts\\healthfacts\\processed_ohdsi_sequences.subset.hdf5",
-    #        steps_to_run=["split", "calculate", "write"], training_fraction_split=0.8)
+    #        steps_to_run=["split"], training_fraction_split=0.8)
+
+    main("C:\\Users\\janos\\data\\ts\\healthfacts\\ohdsi_sequences.hdf5.subset.hdf5",
+         "C:\\Users\\janos\\data\\ts\\healthfacts\\processed_ohdsi_sequences.subset.hdf5",
+         steps_to_run=["split", "calculate", "write"], training_fraction_split=0.8)
 
     #["split", "calculate", "write"]
