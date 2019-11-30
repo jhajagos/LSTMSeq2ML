@@ -235,7 +235,7 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
 
                 end_position_train = train_i - 1
                 start_position_train = 0
-                start_position_test = len(train_id_list)
+                start_position_test = train_i
                 end_position_test = n_size
 
                 test_i = 0
@@ -372,6 +372,8 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                     max_sequence_i = int(np.max(sequence_array))
                     seq_len_ds[0, i] = max_sequence_i
 
+                max_sequence_array = seq_len_ds[0, :]
+
                 for j in range(n_types):
 
                     feature_type = position_class_dict[j]
@@ -386,7 +388,7 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
 
                         i = int(training_list_indexes[k])  # We get the original positions
 
-                        max_sequence_i = int(seq_len_ds[0, i])
+                        max_sequence_i = int(max_sequence_array[i])
 
                         if len(data_list) > max_number_of_samples:
                             break
@@ -430,6 +432,7 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
         if "write" in steps_to_run:
             # Measurements that occur less than a set threshold will be dropped from the test set
             feature_threshold = 0.005
+
             with h5py.File(output_file_name, "a") as f5a:  # We reopen the processed output HDF5 file
                 n_size, end_position_train, start_position_test, end_position_test = get_variables(f5a)
                 labels = convert_binary_string_array(f5a["/data/samples/labels"][...])
@@ -539,6 +542,7 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
 
                 # Builds the independent sequence matrices for prediction
                 positions_array = f5a["/data/split/details/core_array"][...]
+                max_sequence_array = seq_len_ds[0, :]
 
                 for k in range(n_size):
 
@@ -547,7 +551,7 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                     is_test = int(positions_array[k, 1])
                     pos_2_write = int(positions_array[k, 2])
 
-                    sequence_length = int(f5a["/data/sequence_length/all"][0, i])
+                    sequence_length = int(max_sequence_array[i])
                     if sequence_length == 0:
                         sequence_length = 1
 
