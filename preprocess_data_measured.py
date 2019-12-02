@@ -161,8 +161,6 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
         start_time_index = metadata_labels_list.index("_start_time")
         delta_time_index = metadata_labels_list.index("_sequence_time_delta")
 
-
-
         if "split" in steps_to_run:
 
             identifier_array_ds = f5["/static/identifier/data/core_array"][...]
@@ -467,8 +465,15 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                 for feature in features_to_exclude:
                     if feature in dynamic_labels:
                         feature_mask[dynamic_labels.index(feature)] = 0
-
                 selected_features = np.array(labels)[feature_mask]
+
+                # Get indices for custom features
+                independent_features = convert_binary_string_array(f5["/static/independent/data/column_annotations"][...])
+
+                age_index = independent_features.index("primary_age_at_visit_start_in_years_int")
+                male_index = independent_features.index("static_visit_person_gender_concept_name|MALE")
+                female_index = independent_features.index("static_visit_person_gender_concept_name|FEMALE")
+
                 if "processed" not in list(f5a["/data/"]):
                     f5a.create_group("/data/processed/train/")
                     f5a.create_group("/data/processed/test/")
@@ -490,7 +495,8 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                 carry_forward_shape = carry_forward_ds.shape
                 number_of_time_steps = carry_forward_shape[1]
 
-                number_of_custom_features = 0
+                number_of_custom_features = 4  # Age, Gender M, Gender F, Time Delta
+
                 train_shape = (train_n_rows, number_of_time_steps, len(selected_features) + number_of_custom_features)
                 test_shape = (test_n_rows, number_of_time_steps, len(selected_features) + number_of_custom_features)
 
@@ -564,8 +570,12 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                                                                                           shape=(1, test_target_shape[1]),
                                                                                           dtype=data_labels.dtype)
 
-                train_seq_label_ds[...] = np.array(selected_features, dtype=data_labels.dtype)
-                test_seq_label_ds[...] = np.array(selected_features, dtype=data_labels.dtype)
+                train_seq_label_ds[0, 0:len(selected_features)] = np.array(selected_features, dtype=data_labels.dtype)
+                test_seq_label_ds[0, 0:len(selected_features)] = np.array(selected_features, dtype=data_labels.dtype)
+
+                custom_features = [b"age_years_fraction_100", b"gender|Male", b"gender|Female", b"time_fraction_weeks"]
+                train_seq_label_ds[0, -4:] = np.array(custom_features, dtype=data_labels.dtype)
+                test_seq_label_ds[0, -4:] = np.array(custom_features, dtype=data_labels.dtype)
 
                 train_id_ds = f5a["/data/processed/train/identifiers/"].create_dataset("core_array",
                                                                                        shape=(train_n_rows, 3),
@@ -595,6 +605,12 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                 positions_array = f5a["/data/split/details/core_array"][...]
                 seq_len_ds = f5a["/data/sequence_length/all"]
                 max_sequence_array = seq_len_ds[0, :]
+
+                # Custom feature arrays
+                age_array = f5["/static/independent/data/core_array"][:, age_index].ravel()
+                age_array = age_array / 100.0
+                male_array = f5["/static/independent/data/core_array"][:, male_index].ravel()
+                female_array = f5["/static/independent/data/core_array"][:, female_index].ravel()
 
                 # Builds the independent sequence matrices for prediction
                 for k in range(n_size):
@@ -638,33 +654,31 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
 
                     t_carry_forward_array[np.isnan(t_carry_forward_array)] = 0  # np.isnan = 0.5 for numeric values
 
+                    # Custom variables
+
+                    custom_sub_array = np.zeros(shape=(sequence_length, 4))
+                    custom_sub_array[:, 0] = age_array[i]  # Age
+                    custom_sub_array[:, 1] = male_array[i]  # Male
+                    custom_sub_array[:, 2] = female_array[i]  # Female
+                    # Divide number of seconds elapsed by seconds in a week
+                    custom_sub_array[:, 3] = f5["/dynamic/carry_forward/metadata/core_array"][i, 0:sequence_length,
+                                             delta_time_index] / 604800.0
+
                     # We need to split into separate
                     if is_test:
-                        test_seq_ds[pos_2_write, 0:sequence_length, :] = t_carry_forward_array
+                        test_seq_ds[pos_2_write, 0:sequence_length, :] = np.concatenate((t_carry_forward_array, custom_sub_array), axis=1)
                         test_target_ds[pos_2_write, :] = f5["/static/dependent/data/core_array"][i, :]  # Test DX
 
                     else:
-                        train_seq_ds[pos_2_write, 0:sequence_length, :] = t_carry_forward_array
+                        train_seq_ds[pos_2_write, 0:sequence_length, :] = np.concatenate((t_carry_forward_array, custom_sub_array), axis=1)
                         train_target_ds[pos_2_write, :] = f5["/static/dependent/data/core_array"][i, :]  # Target DX
 
-                    # TODO: Add in static variables to time
-                    # For age scale between 0 and 100
 
-                    # TODO Add in identifiers
+                    # Identifiers
                     if is_test:
                         test_id_ds[pos_2_write, :] = np.array([int(row_ids[i]), int(patient_ids[i]), int(start_times[i])])
                     else:
                         train_id_ds[pos_2_write, :] = np.array([int(row_ids[i]), int(patient_ids[i]), int(start_times[i])])
-
-
-                    # /static/identifier/id/core_array
-
-                    # TODO: Add non scaled data
-
-                    # TODO: Add in metadata about sequences
-
-                    # /dynamic/carry_forward/metadata/core_array
-                    # _sequence_time_delta _sequence_i _start_time _time_span
 
                     if k % 100 == 0:
                         print("Wrote %s matrices" % k)
@@ -687,27 +701,26 @@ if __name__ == "__main__":
 
     arg_obj = arg_parse_obj.parse_args()
 
-    # steps_to_run = []
-    # if arg_obj.run_all_steps:
-    #     steps_to_run = ["split", "calculate", "write"]
-    # elif arg_obj.split_training_test:
-    #     steps_to_run = ["split"]
-    # elif arg_obj.recalculate_samples:
-    #     steps_to_run = ["calculate"]
-    # elif arg_obj.write_matrices:
-    #     steps_to_run = ["write"]
-    # else:
-    #     raise RuntimeError("Specify either -s, -r, or -w")
-    #
-    # main(arg_obj.hdf5_file_name, arg_obj.output_file_name, steps_to_run=steps_to_run,
-    #      training_fraction_split=float(arg_obj.fraction_training))
+    steps_to_run = []
+    if arg_obj.run_all_steps:
+        steps_to_run = ["split", "calculate", "write"]
+    elif arg_obj.split_training_test:
+        steps_to_run = ["split"]
+    elif arg_obj.recalculate_samples:
+        steps_to_run = ["calculate"]
+    elif arg_obj.write_matrices:
+        steps_to_run = ["write"]
+    else:
+        raise RuntimeError("Specify either -s, -r, or -w")
+
+    main(arg_obj.hdf5_file_name, arg_obj.output_file_name, steps_to_run=steps_to_run,
+         training_fraction_split=float(arg_obj.fraction_training))
 
     # main("C:\\Users\\janos\\data\\ts\\healthfacts\\ohdsi_sequences.hdf5.subset.hdf5",
     #        "C:\\Users\\janos\\data\\ts\\healthfacts\\processed_ohdsi_sequences.subset.hdf5",
     #        steps_to_run=["split"], training_fraction_split=0.8)
 
-    main("C:\\Users\\janos\\data\\ts\\healthfacts\\ohdsi_sequences.hdf5.subset.hdf5",
-         "C:\\Users\\janos\\data\\ts\\healthfacts\\processed_ohdsi_sequences.subset.hdf5",
-         steps_to_run=["split", "calculate", "write"], training_fraction_split=0.8)
-
+    # main("C:\\Users\\janos\\data\\ts\\healthfacts\\ohdsi_sequences.hdf5.subset.hdf5",
+    #      "C:\\Users\\janos\\data\\ts\\healthfacts\\processed_ohdsi_sequences.subset.hdf5",
+    #      steps_to_run=["write"], training_fraction_split=0.8)
     #["split", "calculate", "write"]
