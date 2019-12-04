@@ -540,7 +540,7 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                                                                                      )
 
                 train_seq_label_ds = f5a["/data/processed/train/sequence"].create_dataset("column_annotations",
-                                                                                          shape=(1, len(selected_features)),
+                                                                                          shape=(1, len(selected_features) + number_of_custom_features),
                                                                                           dtype=data_labels.dtype)
 
                 train_target_ds = f5a["/data/processed/train/target/"].create_dataset("core_array", shape=train_target_shape,
@@ -559,7 +559,7 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                                                                                    compression=compress_alg)
 
                 test_seq_label_ds = f5a["/data/processed/test/sequence"].create_dataset("column_annotations",
-                                                                                        shape=(1, len(selected_features)),
+                                                                                        shape=(1, len(selected_features) + number_of_custom_features),
                                                                                         dtype=data_labels.dtype,
                                                                                         )
 
@@ -620,7 +620,7 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                     is_test = int(positions_array[k, 1])
                     pos_2_write = int(positions_array[k, 2])
 
-                    sequence_length = int(max_sequence_array[i])
+                    sequence_length = int(max_sequence_array[i]) + 1
                     if sequence_length == 0:
                         sequence_length = 1
 
@@ -715,12 +715,12 @@ if __name__ == "__main__":
 
     main(arg_obj.hdf5_file_name, arg_obj.output_file_name, steps_to_run=steps_to_run,
          training_fraction_split=float(arg_obj.fraction_training))
-
+    #
     # main("C:\\Users\\janos\\data\\ts\\healthfacts\\ohdsi_sequences.hdf5.subset.hdf5",
     #        "C:\\Users\\janos\\data\\ts\\healthfacts\\processed_ohdsi_sequences.subset.hdf5",
     #        steps_to_run=["split"], training_fraction_split=0.8)
 
-    # main("C:\\Users\\janos\\data\\ts\\healthfacts\\ohdsi_sequences.hdf5.subset.hdf5",
-    #      "C:\\Users\\janos\\data\\ts\\healthfacts\\processed_ohdsi_sequences.subset.hdf5",
-    #      steps_to_run=["write"], training_fraction_split=0.8)
+    # main("C:\\Users\\janos\\data\\ts\\healthfacts\\20191017\\ohdsi_sequences.hdf5.subset.hdf5",
+    #      "C:\\Users\\janos\\data\\ts\\healthfacts\\20191017\\processed_ohdsi_sequences.subset.hdf5",
+    #      steps_to_run=["split", "calculate", "write"], training_fraction_split=0.8)
     #["split", "calculate", "write"]
