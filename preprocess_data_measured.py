@@ -672,7 +672,6 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                         train_seq_ds[pos_2_write, 0:sequence_length, :] = np.concatenate((t_carry_forward_array, custom_sub_array), axis=1)
                         train_target_ds[pos_2_write, :] = f5["/static/dependent/data/core_array"][i, :]  # Target DX
 
-
                     # Identifiers
                     if is_test:
                         test_id_ds[pos_2_write, :] = np.array([int(row_ids[i]), int(patient_ids[i]), int(start_times[i])])
@@ -715,7 +714,7 @@ if __name__ == "__main__":
 
     main(arg_obj.hdf5_file_name, arg_obj.output_file_name, steps_to_run=steps_to_run,
          training_fraction_split=float(arg_obj.fraction_training),
-         feature_fraction_threshold=float(arg_obj.feature_fraction_threshold))
+         feature_threshold=float(arg_obj.feature_fraction_threshold))
 
     #
     # main("C:\\Users\\janos\\data\\ts\\healthfacts\\ohdsi_sequences.hdf5.subset.hdf5",
