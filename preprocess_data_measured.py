@@ -148,7 +148,7 @@ def get_variables(f5a):
 
 
 def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split, randomly_reorder_patients=True,
-         compress_alg="gzip"
+         compress_alg="gzip", feature_threshold=0.005
          ):
 
     with h5py.File(hdf5_file_name, "r") as f5:
@@ -439,7 +439,6 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
 
         if "write" in steps_to_run:
             # Measurements that occur less than a set threshold will be dropped from the test set
-            feature_threshold = 0.005
 
             with h5py.File(output_file_name, "a") as f5a:  # We reopen the processed output HDF5 file
 
@@ -697,6 +696,7 @@ if __name__ == "__main__":
     arg_parse_obj.add_argument("-a", "--run-all-steps", dest="run_all_steps", default=False, action="store_true",
                                help="Run all steps: split into training and test, recalculate the quantiles, and "
                                     "write matrices")
+    arg_parse_obj.add_argument("-t", "--feature-fraction-threshold", dest="feature_fraction_threshold", default="0.005")
     arg_parse_obj.add_argument("--fraction-training", dest="fraction_training", default="0.8")
 
     arg_obj = arg_parse_obj.parse_args()
@@ -714,7 +714,9 @@ if __name__ == "__main__":
         raise RuntimeError("Specify either -s, -r, or -w")
 
     main(arg_obj.hdf5_file_name, arg_obj.output_file_name, steps_to_run=steps_to_run,
-         training_fraction_split=float(arg_obj.fraction_training))
+         training_fraction_split=float(arg_obj.fraction_training),
+         feature_fraction_threshold=float(arg_obj.feature_fraction_threshold))
+
     #
     # main("C:\\Users\\janos\\data\\ts\\healthfacts\\ohdsi_sequences.hdf5.subset.hdf5",
     #        "C:\\Users\\janos\\data\\ts\\healthfacts\\processed_ohdsi_sequences.subset.hdf5",
