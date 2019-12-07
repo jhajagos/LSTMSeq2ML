@@ -10,6 +10,7 @@ import argparse
 import datetime
 import os
 import json
+import csv
 
 
 """
@@ -211,11 +212,28 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
     print(cr_report)
     test_dict["classification_report"] = cr_report
 
-    prediction_results_file_name = os.path.join(output_directory, "predicted_" + target_name_label + "_" + end_label_time_stamp)
+    prediction_results_base_name = os.path.join(output_directory, "predicted_" + target_name_label + "_" + end_label_time_stamp)
+    prediction_results_hdf5_file_name = prediction_results_base_name + ".hdf5"
+    prediction_results_csv_file_name = prediction_results_base_name + ".csv"
 
-    target_threshold_predictions.shape
+    new_sort_order = np.lexsort((-1 * (y_pred_keras),))
+    
+    identifiers = f5["/data/processed/test/identifiers/core_array"][...]
+    identifiers = identifiers[new_sort_order]
+    sorted_predicted_prob = y_pred_keras[new_sort_order]
 
-    with h5py.File(prediction_results_file_name, "w") as f5w:
+    target_sorted = f5_test_target[:, target_index].ravel()[new_sort_order]
+
+    name_identifiers = f5["/data/processed/test/identifiers/column_annotations"][...].ravel().tolist()
+    name_identifiers = [str(x,"utf8") for x in name_identifiers]
+    with open(prediction_results_csv_file_name, mode="w", newline="") as fw:
+        csv_writer = csv.writer(fw)
+        csv_writer.writerow(name_identifiers + ["position","probability","ground_truth"])
+        
+        for i in range(identifiers.shape[0]):
+            csv_writer.writerow(identifiers[i,:].tolist() + [new_sort_order[i]] + [sorted_predicted_prob[i].tolist()] + [target_sorted[i]])
+
+    with h5py.File(prediction_results_hdf5_file_name, "w") as f5w:
         ds = f5w["/"].create_dataset(name="proba", shape=target_threshold_predictions.shape,
                                      dtype=target_threshold_predictions.dtype)
         ds[...] = target_threshold_predictions[...]
