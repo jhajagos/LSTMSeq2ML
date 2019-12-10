@@ -225,7 +225,7 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
     target_sorted = f5_test_target[:, target_index].ravel()[new_sort_order]
 
     name_identifiers = f5["/data/processed/test/identifiers/column_annotations"][...].ravel().tolist()
-    name_identifiers = [str(x,"utf8") for x in name_identifiers]
+    name_identifiers = [str(x, "utf8") for x in name_identifiers]
     with open(prediction_results_csv_file_name, mode="w", newline="") as fw:
         csv_writer = csv.writer(fw)
         csv_writer.writerow(name_identifiers + ["position","probability","ground_truth"])

@@ -23,8 +23,8 @@ def generate_row(header, row_dict):
     return row_to_write
 
 
-def main(processed_hdf5_file_name, csv_export_file_name, original_hdf5_file_name=None, hdf5_model_file_name=None,
-         export_tracks=True, gpu_acceleration=False, write_n_rows=10):
+def main(processed_hdf5_file_name, csv_export_file_name, hdf5_model_file_name=None,
+         export_tracks=True, gpu_acceleration=False, write_n_rows=None):
 
     if not gpu_acceleration:
         sess = tf.Session(config=tf.ConfigProto(device_count={'GPU': 0}))
@@ -141,13 +141,6 @@ def main(processed_hdf5_file_name, csv_export_file_name, original_hdf5_file_name
 
                     test_seq_array = test_seq_ds[i_row:i_row+1, :, :]
 
-                    # print(train_seq_ds[i:i + 1, :, :].shape)
-                    # print(train_seq_array[0, :, -1].tolist())
-                    # print(train_seq_array[0, :, -1].tolist().index(0.0) - 1)
-                    # raise
-
-                    # print(train_seq_array.shape)
-
                     values_array = test_seq_array[0, :, -1].tolist()
                     if 0.0 in values_array:
                         end_position = values_array.index(0.0) - 1
@@ -158,25 +151,49 @@ def main(processed_hdf5_file_name, csv_export_file_name, original_hdf5_file_name
 
                         copy_train_seq_array = test_seq_array.copy()
                         zero_positions = position + 1
-                        # print(position, zero_positions)
                         copy_train_seq_array[:, zero_positions:, :] = 0
-
-                        # print(copy_train_seq_array)
-                        # raise
 
                         predictions = model_to_apply.predict_proba(copy_train_seq_array)
                         row_dict["t_" + str(position)] = float(predictions[0])
 
-                    # print(row_dict)
                     row_to_write = generate_row(header, row_dict)
                     csv_writer.writerow(row_to_write)
 
 
 if __name__ == "__main__":
 
-    main("C:\\Users\\janos\\data\\ts\\healthfacts\\20191017\\processed_ohdsi_sequence.complete.hdf5",
-         "C:\\Users\\janos\\data\\ts\\healthfacts\\20191017\\processed_ohdsi_sequence.complete.hdf5.csv",
-         hdf5_model_file_name="C:\\Users\\janos\\data\\ts\\healthfacts\\20191017\\acute_renal_failure_syndrome_20191207_2148_coeffs.hdf5"
-         )
+    arg_parse_obj = argparse.ArgumentParser(description="Export EHR sequential training set data as a CSV file")
+    arg_parse_obj.add_argument("-f", "--hdf5-file-name", dest="hdf5_file_name",
+                               default="./processed_ohdsi_sequences.hdf5")
+    arg_parse_obj.add_argument("-o", "--output-csv-file-name", dest="output_csv_file_name", default=None)
+    arg_parse_obj.add_argument("-n", "--n-cut-off", dest="n_cut_off", default=None)
+    arg_parse_obj.add_argument("-e", "--exclude-export-tracks", dest="exclude_export_tracks", default=False,
+                               action="store_true")
+    arg_parse_obj.add_argument("-g", "--exclude-gpu-acceleration", dest="exclude_gpu_acceleration", default=False,
+                               action="store_true")
+    arg_parse_obj.add_argument("-m", "--model-hdf5-file-name", dest="model_hdf5_file_name", default=None)
+    arg_obj = arg_parse_obj.parse_args()
+
+    if arg_obj.output_csv_file_name is None:
+        output_csv_file_name = arg_obj.hdf5_file_name + "*.csv"
+    else:
+        output_csv_file_name = arg_obj.output_csv_file_name
+
+    if arg_obj.write_n_rows is not None:
+        write_n_rows = int(arg_obj.write_n_rows)
+    else:
+        write_n_rows = None
+
+    main(arg_obj.hdf5_file_name, output_csv_file_name, export_tracks=not(arg_obj.exclude_export_tracks),
+         gpu_acceleration=not(arg_obj.exclude_gpu_acceleration), hdf5_model_file_name=arg_obj.model_hdf5_file_name,
+         write_n_rows=write_n_rows)
+
+    # def main(processed_hdf5_file_name, csv_export_file_name, hdf5_model_file_name=None,
+    #          export_tracks=True, gpu_acceleration=False, write_n_rows=None):
+    #
+    # main("C:\\Users\\janos\\data\\ts\\healthfacts\\20191017\\processed_ohdsi_sequence.complete.hdf5",
+    #      "C:\\Users\\janos\\data\\ts\\healthfacts\\20191017\\processed_ohdsi_sequence.complete.hdf5.csv",
+    #      hdf5_model_file_name="C:\\Users\\janos\\data\\ts\\healthfacts\\20191017\\acute_renal_failure_syndrome_20191207_2148_coeffs.hdf5"
+    #      )
 
     # "C:\\Users\\janos\\data\\ts\\healthfacts\\20191017\\acute_renal_failure_syndrome_20191207_2148_coeffs.hdf5"
