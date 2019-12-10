@@ -175,12 +175,12 @@ if __name__ == "__main__":
     arg_obj = arg_parse_obj.parse_args()
 
     if arg_obj.output_csv_file_name is None:
-        output_csv_file_name = arg_obj.hdf5_file_name + "*.csv"
+        output_csv_file_name = arg_obj.hdf5_file_name + ".csv"
     else:
         output_csv_file_name = arg_obj.output_csv_file_name
 
-    if arg_obj.write_n_rows is not None:
-        write_n_rows = int(arg_obj.write_n_rows)
+    if arg_obj.n_cut_off is not None:
+        write_n_rows = int(arg_obj.n_cut_off)
     else:
         write_n_rows = None
 
