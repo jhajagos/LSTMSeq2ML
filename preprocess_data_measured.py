@@ -282,8 +282,18 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
         carry_ds = f5["/dynamic/carry_forward/data/core_array"]  # For categorical
         data_labels = f5["/dynamic/changes/data/column_annotations"]
 
-        features_to_exclude = ["measurement||0|No matching concept", "drug_exposure||0|No matching concept"]
+        features_to_exclude = ["drug_exposure||0|No matching concept"]
+
+        features_to_search_to_exclude = ["measurement||0|No matching concept|"]
+
         dynamic_labels = convert_binary_string_array(data_labels[...])
+
+        for dynamic_label in dynamic_labels:
+            for feature_to_exclude in features_to_search_to_exclude :
+                if feature_to_exclude in dynamic_label:
+                    features_to_exclude += [dynamic_label]
+
+
         dynamic_labels_reverse = list(dynamic_labels)
         dynamic_labels_reverse.reverse()
 
