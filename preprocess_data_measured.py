@@ -292,8 +292,8 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
 
         _, n_sequence_len, n_types = data_ds.shape
 
-        numeric_features = ["measurement"]  # Features which we are going to scale using quantiles 0 to 1
-        categorical_features = ["drug_exposure"]  # Cumulative features
+        numeric_features = ["measurement", "observation"]  # Features which we are going to scale using quantiles 0 to 1
+        categorical_features = ["drug_exposure", "measurement_categorical"]  # Cumulative features
 
         # Find start and end positions for numeric and categorical features
         numeric_features_pos_dict = {}
@@ -483,7 +483,7 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                 quantiles = f5a["/data/summary/quantiles/computed"][...]
                 selected_quantiles = quantiles[:, feature_mask]
 
-                input_dependent_shape = f5["/static/dependent/data/core_array"].shape
+                input_dependent_shape = f5["/static/dependent_hierarchy/data/core_array"].shape
                 n_target_columns = input_dependent_shape[1]
 
                 train_n_rows = end_position_train + 1
@@ -595,8 +595,8 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                 test_id_labels_ds[...] = np.array([b"id", b"identifier_id", b"start_time"])
 
                 # Target labels
-                train_target_label_ds[...] = f5["/static/dependent/data/column_annotations"][...]
-                test_target_label_ds[...] = f5["/static/dependent/data/column_annotations"][...]
+                train_target_label_ds[...] = f5["/static/dependent_hierarchy/data/column_annotations"][...]
+                test_target_label_ds[...] = f5["/static/dependent_hierarchy/data/column_annotations"][...]
 
                 computed_quantiles = quantiles_computed_ds[:, feature_mask]
                 quantile_values = f5a["/data/summary/quantiles/values"][...]
@@ -666,11 +666,11 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                     # We need to split into separate
                     if is_test:
                         test_seq_ds[pos_2_write, 0:sequence_length, :] = np.concatenate((t_carry_forward_array, custom_sub_array), axis=1)
-                        test_target_ds[pos_2_write, :] = f5["/static/dependent/data/core_array"][i, :]  # Test DX
+                        test_target_ds[pos_2_write, :] = f5["/static/dependent_hierarchy/data/core_array"][i, :]  # Test DX
 
                     else:
                         train_seq_ds[pos_2_write, 0:sequence_length, :] = np.concatenate((t_carry_forward_array, custom_sub_array), axis=1)
-                        train_target_ds[pos_2_write, :] = f5["/static/dependent/data/core_array"][i, :]  # Target DX
+                        train_target_ds[pos_2_write, :] = f5["/static/dependent_hierarchy/data/core_array"][i, :]  # Target DX
 
                     # Identifiers
                     if is_test:
