@@ -22,7 +22,8 @@ The CuDNNLSTM is much faster but it does not support Masking
 
 
 def main(input_file_name, target_name, output_directory="./", n_cut=25, prediction_threshold=0.5, epochs=10, batch_size=100,
-         learning_rate=1e-3, learning_rate_decay=1e-4, target_prefix="static_condition_condition_concept_name|"):
+         learning_rate=1e-3, learning_rate_decay=1e-4,
+         target_prefix="static_condition_hierarchy_condition_concept_name|"):
 
     target_index_name = target_prefix + target_name
 
