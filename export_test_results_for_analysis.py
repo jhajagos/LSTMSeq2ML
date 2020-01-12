@@ -162,7 +162,7 @@ def main(processed_hdf5_file_name, csv_export_file_name, hdf5_model_file_name=No
 
 if __name__ == "__main__":
 
-    arg_parse_obj = argparse.ArgumentParser(description="Export EHR sequential training set data as a CSV file")
+    arg_parse_obj = argparse.ArgumentParser(description="Export EHR sequential test set data as a CSV file")
     arg_parse_obj.add_argument("-f", "--hdf5-file-name", dest="hdf5_file_name",
                                default="./processed_ohdsi_sequences.hdf5")
     arg_parse_obj.add_argument("-o", "--output-csv-file-name", dest="output_csv_file_name", default=None)
