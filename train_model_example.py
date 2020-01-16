@@ -1,7 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, LSTM, Dropout, Masking, SimpleRNN
+from tensorflow.keras.layers import Dense, GRU, Dropout, Masking, SimpleRNN
 from sklearn.metrics import roc_curve, roc_auc_score, f1_score, classification_report, average_precision_score
 import numpy as np
 import h5py
@@ -23,7 +23,9 @@ The CuDNNLSTM is much faster but it does not support Masking
 
 def main(input_file_name, target_name, output_directory="./", n_cut=25, prediction_threshold=0.5, epochs=10, batch_size=100,
          learning_rate=1e-3, learning_rate_decay=1e-4,
-         target_prefix="static_condition_hierarchy_condition_concept_name|"):
+         target_prefix="static_condition_hierarchy_condition_concept_name|",
+         cut_sequence=None
+         ):
 
     target_index_name = target_prefix + target_name
 
@@ -71,12 +73,19 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
     print("Dimensions of target:")
     print(f5_test_target.shape)
 
-    f5_train_array = f5_train[...]
+    if cut_sequence is None:
+        f5_train_array = f5_train[...]
+    else:
+        f5_train_array = f5_train[:, 0:cut_sequence, :]
     f5_train_array[np.isnan(f5_train_array)] = 0
 
     print(np.sum(f5_train_array))
 
-    f5_test_array = f5_test[...]
+    if cut_sequence:
+        f5_test_array = f5_test[...]
+    else:
+        f5_test_array = f5_test[:, 0:cut_sequence, :]
+
     f5_test_array[np.isnan(f5_test_array)] = 0
 
     start_date_time = datetime.datetime.utcnow()
@@ -84,9 +93,9 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
     #TODO: Make models plugin
     model = Sequential()
     model.add(Masking(mask_value=0.0, input_shape=f5_train_array.shape[1:]))
-    model.add(LSTM(256, activation="tanh", return_sequences=True))
+    model.add(GRU(256, activation="tanh", return_sequences=True))
     model.add(Dropout(0.2))
-    model.add(LSTM(256, activation="tanh"))
+    model.add(GRU(256, activation="tanh"))
     model.add(Dropout(0.2))
     model.add(Dense(128, activation="relu"))
     model.add(Dropout(0.2))
@@ -229,7 +238,7 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
     name_identifiers = [str(x, "utf8") for x in name_identifiers]
     with open(prediction_results_csv_file_name, mode="w", newline="") as fw:
         csv_writer = csv.writer(fw)
-        csv_writer.writerow(name_identifiers + ["position","probability","ground_truth"])
+        csv_writer.writerow(name_identifiers + ["position", "probability","ground_truth"])
         
         for i in range(identifiers.shape[0]):
             csv_writer.writerow(identifiers[i,:].tolist() + [new_sort_order[i]] + [sorted_predicted_prob[i].tolist()] + [target_sorted[i]])
@@ -262,11 +271,18 @@ if __name__ == "__main__":
     arg_parse_obj.add_argument("-b", "--batch-size", dest="batch_size", default="50")
     arg_parse_obj.add_argument("-l", "--learning-rate", dest="learning_rate", default="1e-3")
     arg_parse_obj.add_argument("-d", "--learning-rate-decay", dest="learning_rate_decay", default="1e-4")
+    arg_parse_obj.add_argument("-s", "--cut-sequence", dest="cut_sequence", default=None)
 
     arg_obj = arg_parse_obj.parse_args()
+
+    if arg_obj.cut_sequence is None:
+        cut_sequence_value = arg_obj.cut_sequence
+    else:
+        cut_sequence_value = int(arg_obj.cut_sequence)
 
     main(arg_obj.hdf5_file_name, arg_obj.target, n_cut=int(arg_obj.n_cut_off), output_directory=arg_obj.output_directory,
          prediction_threshold=float(arg_obj.prediction_threshold), epochs=int(arg_obj.epochs),
          batch_size=int(arg_obj.batch_size), learning_rate=float(arg_obj.learning_rate),
-         learning_rate_decay=float(arg_obj.learning_rate_decay)
+         learning_rate_decay=float(arg_obj.learning_rate_decay),
+         cut_sequence=cut_sequence_value
          )
