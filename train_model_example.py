@@ -2,6 +2,8 @@ import tensorflow as tf
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, GRU, Dropout, Masking, SimpleRNN
+from tensorflow.keras.utils import multi_gpu_model
+
 from sklearn.metrics import roc_curve, roc_auc_score, f1_score, classification_report, average_precision_score
 import numpy as np
 import h5py
@@ -24,7 +26,7 @@ The CuDNNLSTM is much faster but it does not support Masking
 def main(input_file_name, target_name, output_directory="./", n_cut=25, prediction_threshold=0.5, epochs=10, batch_size=100,
          learning_rate=1e-3, learning_rate_decay=1e-4,
          target_prefix="static_condition_hierarchy_condition_concept_name|",
-         cut_sequence=None
+         cut_sequence=None, number_of_gpus=1
          ):
 
     target_index_name = target_prefix + target_name
@@ -102,6 +104,11 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
     model.add(Dense(1, activation="sigmoid"))
 
     opt = tf.keras.optimizers.Adam(lr=learning_rate, decay=learning_rate_decay)
+
+    if number_of_gpus > 1:
+        model = multi_gpu_model(model, gpu=number_of_gpus)
+    else:
+        pass
 
     model.compile(loss="binary_crossentropy", optimizer=opt, metrics=["accuracy"])
 
@@ -272,6 +279,7 @@ if __name__ == "__main__":
     arg_parse_obj.add_argument("-l", "--learning-rate", dest="learning_rate", default="1e-3")
     arg_parse_obj.add_argument("-d", "--learning-rate-decay", dest="learning_rate_decay", default="1e-4")
     arg_parse_obj.add_argument("-s", "--cut-sequence", dest="cut_sequence", default=None)
+    arg_parse_obj.add_argument("-g", "--number-of-gpus", dest="number_of_gpus", default="1")
 
     arg_obj = arg_parse_obj.parse_args()
 
@@ -284,5 +292,6 @@ if __name__ == "__main__":
          prediction_threshold=float(arg_obj.prediction_threshold), epochs=int(arg_obj.epochs),
          batch_size=int(arg_obj.batch_size), learning_rate=float(arg_obj.learning_rate),
          learning_rate_decay=float(arg_obj.learning_rate_decay),
-         cut_sequence=cut_sequence_value
+         cut_sequence=cut_sequence_value,
+         number_of_gpus=int(arg_obj.number_of_gpus)
          )
