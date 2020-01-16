@@ -106,7 +106,7 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
     opt = tf.keras.optimizers.Adam(lr=learning_rate, decay=learning_rate_decay)
 
     if number_of_gpus > 1:
-        model = multi_gpu_model(model, gpu=number_of_gpus)
+        model = multi_gpu_model(model, gpus=number_of_gpus)
     else:
         pass
 
