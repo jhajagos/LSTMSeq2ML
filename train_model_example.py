@@ -79,6 +79,7 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
         f5_train_array = f5_train[...]
     else:
         f5_train_array = f5_train[:, 0:cut_sequence, :]
+
     f5_train_array[np.isnan(f5_train_array)] = 0
 
     #print(np.sum(f5_train_array))
@@ -143,7 +144,7 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
         model = tf.keras.models.load_model(model_file_name)
 
     # Make a probability prediction
-    y_pred_keras = model.predict_proba(np.array(f5_test[...], dtype="float32")).ravel()
+    y_pred_keras = model.predict_proba(np.array(f5_test_array[...], dtype="float32")).ravel()
 
     # Diagnostics
     results_dict = {"meta": {}}
