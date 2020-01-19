@@ -81,9 +81,9 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
         f5_train_array = f5_train[:, 0:cut_sequence, :]
     f5_train_array[np.isnan(f5_train_array)] = 0
 
-    print(np.sum(f5_train_array))
+    #print(np.sum(f5_train_array))
 
-    if cut_sequence:
+    if cut_sequence is None:
         f5_test_array = f5_test[...]
     else:
         f5_test_array = f5_test[:, 0:cut_sequence, :]
@@ -97,8 +97,8 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
     model.add(Masking(mask_value=0.0, input_shape=f5_train_array.shape[1:]))
     model.add(GRU(256, activation="tanh", return_sequences=True))
     model.add(Dropout(0.2))
-    model.add(GRU(256, activation="tanh"))
-    model.add(Dropout(0.2))
+    # model.add(GRU(256, activation="tanh"))
+    # model.add(Dropout(0.2))
     model.add(Dense(128, activation="relu"))
     model.add(Dropout(0.2))
     model.add(Dense(1, activation="sigmoid"))
@@ -136,7 +136,11 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
     time_lapse = end_date_time - start_date_time
 
     coefficients_filename = target_name_label + "_" + end_label_time_stamp + "_coeffs.hdf5"
-    model.save(os.path.join(output_directory, coefficients_filename))
+    model_file_name = os.path.join(output_directory, coefficients_filename)
+    model.save(model_file_name)
+
+    if number_of_gpus > 1:
+        model = tf.keras.models.load_model(model_file_name)
 
     # Make a probability prediction
     y_pred_keras = model.predict_proba(np.array(f5_test[...], dtype="float32")).ravel()
