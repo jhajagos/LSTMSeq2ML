@@ -93,6 +93,10 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
 
     start_date_time = datetime.datetime.utcnow()
 
+    gpu_devices = tf.config.experimental.list_physical_devices('GPU')
+    for device in gpu_devices:
+        tf.config.experimental.set_memory_growth(device, True)
+
     #TODO: Make models plugin
     model = Sequential()
     model.add(Masking(mask_value=0.0, input_shape=f5_train_array.shape[1:]))
