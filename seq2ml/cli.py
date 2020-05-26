@@ -1,16 +1,19 @@
 """Command-line interface to train and evaulate models."""
 
+import datetime
 import json
 import os
+from pathlib import Path
 import pprint
 import sys
+import tempfile
 
 import click
 import h5py
 import sklearn.metrics
 import tensorflow as tf
 
-from .models import get_model
+from .models import get_model_fn
 
 tfk = tf.keras
 
@@ -32,10 +35,11 @@ def cli():
 
 @cli.command()
 @click.option("--filepath", "-f", type=click.Path(exists=True), required=True)
-@click.option("--n-cut", "-n", type=int, required=True, default=25)
+@click.option("--n-cut", "-n", type=int, default=25, show_default=True)
 def popular(*, filepath, n_cut):
     """Print the most popular labels in the dataset."""
 
+    print("Loading hdf5 data")
     with h5py.File(filepath, mode="r") as f:
         x_train_len = f["/data/processed/train/sequence/core_array"].shape[0]
         y_train_all = f["/data/processed/train/target/core_array"][:]
@@ -64,30 +68,45 @@ def popular(*, filepath, n_cut):
 @click.option("--filepath", "-f", type=click.Path(exists=True), required=True)
 @click.option("--target-name", "-t", required=True)
 @click.option("--model-name", "-m", required=True)
+@click.option(
+    "--output-dir", "-o", type=click.Path(), help="Default is temporary directory", required=False)
 @click.option("--batch-size", "-b", default=48, show_default=True)
 @click.option("--epochs", "-e", default=1, show_default=True)
 @click.option("--learning-rate", "-l", default=1e-3, show_default=True)
+@click.option("--save-history/--no-save-history", default=True, show_default=True)
 @click.option("--evaluate/--no-evaluate", default=True, show_default=True)
-@click.option("--model-kwds", type=JSONParamType(), show_default=True)
+@click.option("--model-kwds", type=JSONParamType(), default=None, show_default=True)
 def train(
     *,
     filepath,
     target_name,
     model_name,
+    output_dir,
     batch_size,
     epochs,
     learning_rate,
+    save_history,
     evaluate,
     model_kwds
 ):
-    """Train an recurrent network."""
+    """Train a recurrent network."""
 
-    print("Training to predict '{}'.".format(target_name), flush=True)
+    # Get the timestamp for use later when saving outputs.
+    timestamp = get_timestamp()
 
+    print("Training to predict '{}'.".format(target_name))
+
+    print("Instantiating model")
     # Try to get the model first so if it is not available, we error quickly.
-    model_fn = get_model(model_name)
-    model = model_fn() if model_kwds is None else model_fn(**model_kwds)
+    model_fn = get_model_fn(model_name)
 
+    # MirroredStrategy for multi-gpu single-machine training. Creating the model within
+    # this scope is fine for single-gpu training.
+    strategy = tf.distribute.MirroredStrategy()
+    with strategy.scope():
+        model = model_fn() if model_kwds is None else model_fn(**model_kwds)
+
+    print("Loading data")
     # Find the target index for the labels.
     with h5py.File(filepath, mode="r") as f:
         y_train_labels = f["/data/processed/train/target/column_annotations"][:]
@@ -104,27 +123,49 @@ def train(
         x_test = f["/data/processed/test/sequence/core_array"][:]
         y_test = f["/data/processed/test/target/core_array"][:, target_index]
 
-    model.compile(
-        loss=tfk.losses.BinaryCrossentropy(from_logits=True),
-        optimizer=tfk.optimizers.Adam(learning_rate),
-        metrics=["accuracy"],
-    )
+    print("Compiling model")
+    with strategy.scope():
+        model.compile(
+            loss=tfk.losses.BinaryCrossentropy(from_logits=True),
+            optimizer=tfk.optimizers.Adam(learning_rate),
+            metrics=["accuracy"],
+        )
 
     target_name_label = "_".join(target_name.lower().split())
 
-    # TODO: add callbacks
+    if output_dir is None:
+        output_dir = tempfile.mkdtemp(suffix="_" + timestamp)
+    elif not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    elif not os.path.isdir(output_dir):
+        raise ValueError("output directory '{}' is not a directory".format(output_dir))
+
+    print("Saving outputs to", output_dir)
+    output_dir = Path(output_dir)
+
+
+    # TODO: add callbacks. Use timestamp from above.
     callbacks = []
 
+    print("Training model")
     history = model.fit(
         x=x_train,
         y=y_train,
         epochs=epochs,
         batch_size=batch_size,
-        # validation_data=(x_test, y_test),
+        validation_data=(x_test, y_test),
         callbacks=callbacks,
     )
 
+    if save_history:
+        path = output_dir / "{}_history.json".format(timestamp)
+        print("Saving training history to", path)
+        with open(path, "w") as f:
+            json.dump(str(history.history), f)
+
     if evaluate:
+        print("Evaluating model")
+
         y_pred = model.predict(x_test).ravel()
         y_pred = tf.sigmoid(y_pred).numpy()
 
@@ -143,7 +184,7 @@ def train(
                 "target_name_label": target_name_label,
             },
             "data": {
-                "input_filename": filepath,
+                "input_filename": os.path.abspath(filepath),
                 "training_size_n": x_train.shape[0],
                 "max_time_steps_n": x_train.shape[1],
                 "features_n": x_train.shape[2],
@@ -164,6 +205,15 @@ def train(
             },
         }
 
+        path = output_dir / "{}_results.json".format(timestamp)
+        print("Saving evaluation results to", path)
+        with open(path, "w") as f:
+            json.dump(str(results_dict), f)
+
         pprint.pprint(results_dict)
 
-        # TODO: save results to JSON.
+
+def get_timestamp():
+    """Return a UTC timestamp string like "20200526-164805-UTC"."""
+    dt = datetime.datetime.utcnow()
+    return dt.strftime("%Y%m%d-%H%M%S-UTC")
