@@ -23,6 +23,7 @@ import tensorflow as tf
 tfk = tf.keras
 tfkl = tfk.layers
 
+
 def get_model(name):
     d = {
         "gru_v1": gru_v1,
@@ -32,7 +33,10 @@ def get_model(name):
         return d[name]
     except KeyError:
         raise ValueError(
-            "unknown model name: '{}'. Available models: '{}'".format(name, "', '".join(model.keys())))
+            "unknown model name: '{}'. Available models: '{}'".format(
+                name, "', '".join(model.keys())
+            )
+        )
 
 
 def gru_v1(input_shape=(200, 692), dropout_rate=0.5):
@@ -83,7 +87,7 @@ def gru_tiny(input_shape=(200, 692), dropout_rate=0.5):
     model = tfk.Sequential()
     model.add(tfkl.Input(input_shape))
     model.add(tfkl.Masking(mask_value=0.0))
-    model.add(tfkl.GRU(128, return_sequences=True))
+    model.add(tfkl.GRU(128))
     model.add(tfkl.Dropout(dropout_rate))
     model.add(tfkl.Dense(1))
     return model
