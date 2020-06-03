@@ -303,17 +303,19 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
         _, n_sequence_len, n_types = data_ds.shape
 
         numeric_features = ["measurement", "observation"]  # Features which we are going to scale using quantiles 0 to 1
-        categorical_features = ["drug_exposure", "measurement_categorical"]  # Cumulative features
+        categorical_features = ["atc5_drug_exposure", "measurement_categorical"]  # Cumulative features
 
         # Find start and end positions for numeric and categorical features
         numeric_features_pos_dict = {}
 
         for feature_class in numeric_features:
-            numeric_features_pos_dict[feature_class] = (class_labels.index(feature_class),
+            if feature_class in class_labels:
+                numeric_features_pos_dict[feature_class] = (class_labels.index(feature_class),
                                                         len(class_labels) - class_labels_reverse.index(feature_class) - 1)
         categorical_features_pos_dict = {}
         for feature_class in categorical_features:
-            categorical_features_pos_dict[feature_class] = (class_labels.index(feature_class),
+            if feature_class in class_labels:
+                categorical_features_pos_dict[feature_class] = (class_labels.index(feature_class),
                                                             len(class_labels) - class_labels_reverse.index(feature_class) - 1)
 
         # We are going to treat numeric features and categorical features differently
@@ -664,7 +666,6 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                     t_carry_forward_array[np.isnan(t_carry_forward_array)] = 0  # np.isnan = 0.5 for numeric values
 
                     # Custom variables
-
                     custom_sub_array = np.zeros(shape=(sequence_length, 4))
                     custom_sub_array[:, 0] = age_array[i]  # Age
                     custom_sub_array[:, 1] = male_array[i]  # Male
@@ -694,7 +695,7 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
 
 if __name__ == "__main__":
 
-    arg_parse_obj = argparse.ArgumentParser(description="Pre-process HDF5 for applications")
+    arg_parse_obj = argparse.ArgumentParser(description="Preprocess TimeWeaver HDF5 for machine learning creating a test and training sets")
     arg_parse_obj.add_argument("-f", "--hdf5-file-name", dest="hdf5_file_name")
     arg_parse_obj.add_argument("-o", "--output-hdf5-file-name", dest="output_file_name")
     arg_parse_obj.add_argument("-s", "--split-into-training-test-set", dest="split_training_test", default=False,
@@ -726,12 +727,3 @@ if __name__ == "__main__":
          training_fraction_split=float(arg_obj.fraction_training),
          feature_threshold=float(arg_obj.feature_fraction_threshold))
 
-    #
-    # main("C:\\Users\\janos\\data\\ts\\healthfacts\\ohdsi_sequences.hdf5.subset.hdf5",
-    #        "C:\\Users\\janos\\data\\ts\\healthfacts\\processed_ohdsi_sequences.subset.hdf5",
-    #        steps_to_run=["split"], training_fraction_split=0.8)
-
-    # main("C:\\Users\\janos\\data\\ts\\healthfacts\\20191017\\ohdsi_sequences.hdf5.subset.hdf5",
-    #      "C:\\Users\\janos\\data\\ts\\healthfacts\\20191017\\processed_ohdsi_sequences.subset.hdf5",
-    #      steps_to_run=["split", "calculate", "write"], training_fraction_split=0.8)
-    #["split", "calculate", "write"]
