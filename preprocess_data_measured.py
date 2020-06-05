@@ -713,7 +713,14 @@ if __name__ == "__main__":
     arg_parse_obj.add_argument("-t", "--feature-fraction-threshold", dest="feature_fraction_threshold", default="0.005")
     arg_parse_obj.add_argument("--fraction-training", dest="fraction_training", default="0.8")
 
+    arg_parse_obj.add_argument("-c", "--compression-algorithm", dest="compression_algorithm", default="lzf")
+
     arg_obj = arg_parse_obj.parse_args()
+
+    if arg_obj.compression_algorithm == "None":
+        compression_algorithm = None
+    else:
+        compression_algorithm = arg_obj.compression_algorithm
 
     steps_to_run = []
     if arg_obj.run_all_steps:
@@ -729,5 +736,5 @@ if __name__ == "__main__":
 
     main(arg_obj.hdf5_file_name, arg_obj.output_file_name, steps_to_run=steps_to_run,
          training_fraction_split=float(arg_obj.fraction_training),
-         feature_threshold=float(arg_obj.feature_fraction_threshold))
+         feature_threshold=float(arg_obj.feature_fraction_threshold), compress_alg=compression_algorithm)
 
