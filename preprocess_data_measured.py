@@ -495,6 +495,9 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                 quantiles = f5a["/data/summary/quantiles/computed"][...]
                 selected_quantiles = quantiles[:, feature_mask]
 
+                # TODO: Add additional dependent variables which can be used for prediction will need to change the
+                # training script.
+
                 input_dependent_shape = f5["/static/dependent_hierarchy/data/core_array"].shape
                 n_target_columns = input_dependent_shape[1]
 
@@ -607,6 +610,7 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                 test_id_labels_ds[...] = np.array([b"id", b"identifier_id", b"start_time"])
 
                 # Target labels
+
                 train_target_label_ds[...] = f5["/static/dependent_hierarchy/data/column_annotations"][...]
                 test_target_label_ds[...] = f5["/static/dependent_hierarchy/data/column_annotations"][...]
 
@@ -695,7 +699,7 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
 
 if __name__ == "__main__":
 
-    arg_parse_obj = argparse.ArgumentParser(description="Preprocess TimeWeaver HDF5 for machine learning creating a test and training sets")
+    arg_parse_obj = argparse.ArgumentParser(description="Preprocess TimeWeaver HDF5 mapped to OHDSI for machine learning tasks")
     arg_parse_obj.add_argument("-f", "--hdf5-file-name", dest="hdf5_file_name")
     arg_parse_obj.add_argument("-o", "--output-hdf5-file-name", dest="output_file_name")
     arg_parse_obj.add_argument("-s", "--split-into-training-test-set", dest="split_training_test", default=False,
