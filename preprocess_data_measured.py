@@ -498,7 +498,8 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
 
                 dependent_features_paths = [
                     "/static/condition_hierarchy/data/",
-                    "/static/procedure/data/"
+                    "/static/procedure/data/",
+                    "/static/death/data/"
                 ]
 
                 dependent_features_dict = {dfp: f5[dfp + "/core_array/"].shape for dfp in dependent_features_paths}
