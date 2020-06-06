@@ -148,7 +148,7 @@ def get_variables(f5a):
 
 
 def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split, randomly_reorder_patients=True,
-         compress_alg="gzip", feature_threshold=0.005
+         compress_alg="gzip", feature_threshold=0.005, n_custom_features=0
          ):
 
     with h5py.File(hdf5_file_name, "r") as f5:
@@ -277,7 +277,6 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                 dvg_ca_label_ds[0, 5] = b"n_i_test_size"
                 dvg_ca_ds[0, 5] = n_i_test_size
 
-
         data_ds = f5["/dynamic/changes/data/core_array"]
         carry_ds = f5["/dynamic/carry_forward/data/core_array"]  # For categorical
         data_labels = f5["/dynamic/changes/data/column_annotations"]
@@ -292,7 +291,6 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
             for feature_to_exclude in features_to_search_to_exclude :
                 if feature_to_exclude in dynamic_label:
                     features_to_exclude += [dynamic_label]
-
 
         dynamic_labels_reverse = list(dynamic_labels)
         dynamic_labels_reverse.reverse()
@@ -498,8 +496,20 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                 # TODO: Add additional dependent variables which can be used for prediction will need to change the
                 # training script.
 
-                input_dependent_shape = f5["/static/dependent_hierarchy/data/core_array"].shape
-                n_target_columns = input_dependent_shape[1]
+                dependent_features_paths = [
+                    "/static/condition_hierarchy/data/",
+                    "/static/procedure/data/"
+                ]
+
+                dependent_features_dict = {dfp: f5[dfp + "/core_array/"].shape for dfp in dependent_features_paths}
+                dependent_features_labels_dict = {dfp: convert_binary_string_array(f5[dfp + "/column_annotations/"][...])
+                                                  for dfp in dependent_features_paths}
+
+                n_target_columns = 0
+                for feature_path in dependent_features_paths:
+                    n_target_columns += dependent_features_dict[feature_path][1]
+
+                n_target_columns += n_custom_features
 
                 train_n_rows = end_position_train + 1
                 test_n_rows = end_position_test - start_position_test
@@ -610,9 +620,17 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                 test_id_labels_ds[...] = np.array([b"id", b"identifier_id", b"start_time"])
 
                 # Target labels
+                target_labels_list = []
+                for dfp in dependent_features_paths:
+                    target_labels_list += dependent_features_labels_dict[dfp]
 
-                train_target_label_ds[...] = f5["/static/dependent_hierarchy/data/column_annotations"][...]
-                test_target_label_ds[...] = f5["/static/dependent_hierarchy/data/column_annotations"][...]
+                for i in range(n_custom_features):
+                    target_labels_list += ["custom_feature_" + str(i)]
+
+                target_labels_binary = np.string_(target_labels_list)
+
+                train_target_label_ds[...] = target_labels_binary
+                test_target_label_ds[...] = target_labels_binary
 
                 computed_quantiles = quantiles_computed_ds[:, feature_mask]
                 quantile_values = f5a["/data/summary/quantiles/values"][...]
@@ -681,11 +699,23 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                     # We need to split into separate
                     if is_test:
                         test_seq_ds[pos_2_write, 0:sequence_length, :] = np.concatenate((t_carry_forward_array, custom_sub_array), axis=1)
-                        test_target_ds[pos_2_write, :] = f5["/static/dependent_hierarchy/data/core_array"][i, :]  # Test DX
+                        start_position = 0
+                        for dependent_feature in dependent_features_paths:
+                            dependent_feature_shape = dependent_features_dict[dependent_feature]
+                            end_position = start_position + dependent_feature_shape[1]
+                            test_target_ds[pos_2_write, start_position:end_position] = f5[dependent_feature + "/core_array/"][i, :]
+                            start_position = end_position
 
                     else:
                         train_seq_ds[pos_2_write, 0:sequence_length, :] = np.concatenate((t_carry_forward_array, custom_sub_array), axis=1)
-                        train_target_ds[pos_2_write, :] = f5["/static/dependent_hierarchy/data/core_array"][i, :]  # Target DX
+                        start_position = 0
+                        for dependent_feature in dependent_features_paths:
+                            dependent_feature_shape = dependent_features_dict[dependent_feature]
+                            end_position = start_position + dependent_feature_shape[1]
+                            train_target_ds[pos_2_write, start_position:end_position] = f5[
+                                                                                           dependent_feature + "/core_array/"][
+                                                                                       i, :]
+                            start_position = end_position
 
                     # Identifiers
                     if is_test:
@@ -713,7 +743,12 @@ if __name__ == "__main__":
     arg_parse_obj.add_argument("-t", "--feature-fraction-threshold", dest="feature_fraction_threshold", default="0.005")
     arg_parse_obj.add_argument("--fraction-training", dest="fraction_training", default="0.8")
 
-    arg_parse_obj.add_argument("-c", "--compression-algorithm", dest="compression_algorithm", default="lzf")
+    arg_parse_obj.add_argument("-c", "--compression-algorithm", dest="compression_algorithm", default="lzf",
+                               help="Compression algorithm for HDF5 file (lzf, gzip, None)")
+
+    arg_parse_obj.add_argument("-n", "--number-of-custom-features", dest="number_of_custom_features", default="0",
+                               help="Number of custom variables to add for prediction matrix. The default value is 0."
+                               )
 
     arg_obj = arg_parse_obj.parse_args()
 
@@ -736,5 +771,7 @@ if __name__ == "__main__":
 
     main(arg_obj.hdf5_file_name, arg_obj.output_file_name, steps_to_run=steps_to_run,
          training_fraction_split=float(arg_obj.fraction_training),
-         feature_threshold=float(arg_obj.feature_fraction_threshold), compress_alg=compression_algorithm)
+         feature_threshold=float(arg_obj.feature_fraction_threshold), compress_alg=compression_algorithm,
+         n_custom_features=int(arg_obj.number_of_custom_features)
+         )
 
