@@ -62,7 +62,7 @@ def gru_v1(input_shape=(200, 692), dropout_rate=0.5):
     """
 
     model = tfk.Sequential()
-    model.add(tfkl.Input(input_shape))
+    model.add(tfkl.InputLayer(input_shape))
     model.add(tfkl.Masking(mask_value=0.0))
     model.add(tfkl.GRU(256, return_sequences=True))
     model.add(tfkl.Dropout(dropout_rate))
@@ -91,7 +91,7 @@ def gru_tiny(input_shape=(200, 692), dropout_rate=0.5):
     """
 
     model = tfk.Sequential()
-    model.add(tfkl.Input(input_shape))
+    model.add(tfkl.InputLayer(input_shape))
     model.add(tfkl.Masking(mask_value=0.0))
     model.add(tfkl.GRU(128))
     model.add(tfkl.Dropout(dropout_rate))
@@ -116,7 +116,7 @@ def gru_tiny_no_cudnn(input_shape=(200, 692), dropout_rate=0.5):
     """
 
     model = tfk.Sequential()
-    model.add(tfkl.Input(input_shape))
+    model.add(tfkl.InputLayer(input_shape))
     model.add(tfkl.Masking(mask_value=0.0))
     model.add(tfkl.GRU(128, activation="sigmoid"))
     model.add(tfkl.Dropout(dropout_rate))
