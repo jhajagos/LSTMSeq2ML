@@ -5,7 +5,7 @@ import json
 import os
 from pathlib import Path
 import pprint
-import sys
+import re
 import tempfile
 
 import click
@@ -31,6 +31,95 @@ class JSONParamType(click.ParamType):
 @click.group()
 def cli():
     pass
+
+
+@cli.command()
+@click.option("--filepath", "-f", type=click.Path(exists=True), required=True)
+@click.option(
+    "--keyword",
+    "-k",
+    multiple=True,
+    help="Case-insensitive, can be used multiple times.",
+)
+@click.option("--regex", "-r", help="Regular expression.")
+@click.option(
+    "--n-cut",
+    "-n",
+    type=int,
+    default=25,
+    show_default=True,
+    help="Show this many matches maximum.",
+)
+@click.option(
+    "--split-char",
+    "-s",
+    default="|",
+    show_default=True,
+    help="Character used to split prefix and label.",
+)
+def search(*, filepath, keyword, regex, n_cut, split_char):
+    """Search target labels in the dataset using keywords or regular expression.
+
+    Multiple keywords or a regular expression can be supplied. If multiple keywords are
+    supplied, the union of matching labels is returned. Case-insensitive.
+
+    Examples:
+
+        seq2ml search -f path/to/data.hdf5 -k ventilator -k alveolar
+        seq2ml search -f path/to/data.hdf5 -r '(\bVentilator\b|\bAlveolar\b)'
+    """
+
+    # keyword is a tuple; renamed here to be more descriptive.
+    keywords = keyword
+
+    if not (keywords or regex) or (keywords and regex):
+        raise click.UsageError(
+            "-k/--keyword or -r/--regex must be supplied, but not both."
+        )
+
+    # Check that the regular expression is valid.
+    if regex:
+        try:
+            prog = re.compile(regex, flags=re.IGNORECASE)
+        except re.error as err:
+            raise click.BadParameter(err, param_hint="-r/--regex")
+
+    with h5py.File(filepath, mode="r") as f:
+        y_train_labels = f["/data/processed/train/target/column_annotations"][:]
+
+    y_train_labels = y_train_labels.flatten().tolist()
+    y_train_labels = list(map(bytes.decode, y_train_labels))
+
+    matches = []
+
+    if keywords:
+        keywords_lower = list(map(str.lower, keywords))
+        y_train_labels_lower = list(map(str.lower, y_train_labels))
+        for jj, label in enumerate(y_train_labels_lower):
+            for keyword in keywords_lower:
+                if keyword in label:
+                    # Add the original label (not the lower-case one).
+                    match = y_train_labels[jj]
+                    if split_char:
+                        match = match.split(split_char)[-1]
+                    matches.append(match)
+        header = "keyword(s) '{}'".format("', '".join(keywords))
+
+    elif regex:
+        for label in y_train_labels:
+            if prog.search(label) is not None:
+                match = label
+                if split_char:
+                    match = match.split(split_char)[-1]
+                matches.append(match)
+        header = "regular expression '{}'".format(regex)
+
+    print("\nThe first {} matches for {}".format(n_cut, header))
+    print()
+    print("Label")
+    print("-----")
+    print("\n".join(matches[:n_cut]))
+    print()
 
 
 @cli.command()
@@ -69,7 +158,12 @@ def popular(*, filepath, n_cut):
 @click.option("--target-name", "-t", required=True)
 @click.option("--model-name", "-m", required=True)
 @click.option(
-    "--output-dir", "-o", type=click.Path(), help="Default is temporary directory", required=False)
+    "--output-dir",
+    "-o",
+    type=click.Path(),
+    help="Default is temporary directory",
+    required=False,
+)
 @click.option("--batch-size", "-b", default=48, show_default=True)
 @click.option("--epochs", "-e", default=1, show_default=True)
 @click.option("--learning-rate", "-l", default=1e-3, show_default=True)
@@ -142,7 +236,6 @@ def train(
 
     print("Saving outputs to", output_dir)
     output_dir = Path(output_dir)
-
 
     # TODO: add callbacks. Use timestamp from above.
     callbacks = []
