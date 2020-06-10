@@ -2,7 +2,27 @@
 
 Code for learning how to train a LSTM
 
+# Installation
+
+Install this project with
+
+```
+python3 -m pip install --no-cache-dir --editable . 'tensorflow>=2.0.0'
+```
+
 # Command-line interface
+
+## Search for targets
+
+The `seq2ml search` program can be used to search through a dataset using keywords or a regular expression. Searches are case-insensitive.
+
+```
+seq2ml search -f path/to/data.hdf5 -k ventilator -k alveolar
+```
+
+```
+seq2ml search -f path/to/data.hdf5 -r '(\bVentilator\b|\bAlveolar\b)'
+```
 
 ## Display most popular targets
 
