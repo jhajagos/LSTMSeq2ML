@@ -1,10 +1,8 @@
 """
-    The goal here is to demonstrate how we can use sequential data from EHRs for making
-    DX prediction.
+    Program for building HDF5 file which can be used by seq2ml for sequential model training. The program
+    normalizes values to 0 and 1, removes infrequent features, and splits underlying data into training and testing.
 
-    The data here has been processed using the TimeWeaver library and OHDSI mapping class files.
-
-    TimeWeaver library can support adding medication.
+    The data here has been processed using the TimeWeaver library and OHDSI mapping class files from map2 tables.
 """
 
 import h5py  # Python library for reading HDF5
