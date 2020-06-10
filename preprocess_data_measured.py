@@ -467,6 +467,7 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
 
                 count_feature_threshold = int(n_i_training_size * feature_threshold)
 
+                # TODO: Feature mask for categorical variables sum up all across categories
                 frequency_count = f5a["/data/frequency/count"][...]
                 feature_mask_raw = frequency_count >= count_feature_threshold  # Just based on counts
                 feature_mask = feature_mask_raw[0]
@@ -492,9 +493,6 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
 
                 quantiles = f5a["/data/summary/quantiles/computed"][...]
                 selected_quantiles = quantiles[:, feature_mask]
-
-                # TODO: Add additional dependent variables which can be used for prediction will need to change the
-                # training script.
 
                 dependent_features_paths = [
                     "/static/condition_hierarchy/data/",
