@@ -39,9 +39,6 @@ def main(hdf5_file_name, ratio, uniform_error, nearest_integer):
             number_of_elements = positive_cases.shape[1] * positive_cases.shape[2]
             array_shape = (positive_cases.shape[1], positive_cases.shape[2])
 
-            # negative_cases = f5[sequence_array_shape][mask_negative_array, :, :]
-            # number_of_negative_cases = negative_cases.shape[0]
-
             f5w[target_array_path][...] = 0  # Set array to zero
 
             number_of_cases = f5w[sequence_array_path].shape[0]
@@ -51,7 +48,7 @@ def main(hdf5_file_name, ratio, uniform_error, nearest_integer):
                 i_pos_sample = np.random.randint(0, number_of_positive_cases-1)
 
                 positive_case = positive_cases[i_pos_sample, :, :]
-                #print(number_of_elements)
+
                 random_noise = 1 + np.reshape(np.random.uniform(0, uniform_error, number_of_elements), array_shape)
                 positive_case_with_error = positive_case * random_noise  # if 0 error will error out
 
@@ -66,7 +63,7 @@ def main(hdf5_file_name, ratio, uniform_error, nearest_integer):
                 if i > 0 and i % 100 == 0:
                     print("Resampled %s cases" % i)
 
-            print("Total number of cases resampled: %s" % (i+1))
+            print("Total number of cases re-sampled: %s" % (i+1))
 
 
 if __name__ == "__main__":
@@ -75,11 +72,8 @@ if __name__ == "__main__":
     #
     arg_parse_obj.add_argument("-f", "--hdf5-file-name", dest="hdf5_file_name")
     arg_parse_obj.add_argument("-n" "--over-sample-positive-case", dest="over_sample_positive_case", default=1000)
-    arg_parse_obj.add_argument("-s", "--uniform-error", dest="uniform_error", default=0.05) # 0.05
+    arg_parse_obj.add_argument("-s", "--uniform-error", dest="uniform_error", default=0.05)
     arg_parse_obj.add_argument("-i", "--round-to-nearest-integer", dest="round_to_nearest_integer", default=True, action="store_false")
     arg_obj = arg_parse_obj.parse_args()
 
     main(arg_obj.hdf5_file_name, int(arg_obj.over_sample_positive_case), float(arg_obj.uniform_error), arg_obj.round_to_nearest_integer)
-
-
-    #main("prescriber_multi_year.split.hdf5", 1000, 0.05, True)
