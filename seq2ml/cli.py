@@ -1,5 +1,6 @@
 """Command-line interface to train and evaulate models."""
 
+import contextlib
 import datetime
 import json
 import os
@@ -194,9 +195,14 @@ def train(
     # Try to get the model first so if it is not available, we error quickly.
     model_fn = get_model_fn(model_name)
 
-    # MirroredStrategy for multi-gpu single-machine training. Creating the model within
-    # this scope is fine for single-gpu training.
+    # MirroredStrategy for multi-gpu single-machine training.
     strategy = tf.distribute.MirroredStrategy()
+
+    # cuDNN GRU implementation is not used with MirroredStrategy, so use a mock context
+    # if using a single GPU. See https://github.com/tensorflow/tensorflow/issues/40421
+    if strategy.num_replicas_in_sync < 2:
+        strategy = NullStrategy()
+
     with strategy.scope():
         model = model_fn() if model_kwds is None else model_fn(**model_kwds)
 
@@ -310,3 +316,30 @@ def get_timestamp():
     """Return a UTC timestamp string like "20200526-164805-UTC"."""
     dt = datetime.datetime.utcnow()
     return dt.strftime("%Y%m%d-%H%M%S-UTC")
+
+
+# Source copied from
+# https://github.com/python/cpython/blob/811e040b6e0241339545c2f055db8259b408802f/Lib/contextlib.py#L686-L704
+class nullcontext(contextlib.AbstractContextManager):
+    """Context manager that does no additional processing.
+    Used as a stand-in for a normal context manager, when a particular
+    block of code is only sometimes used with a normal context manager:
+    cm = optional_cm if condition else nullcontext()
+    with cm:
+        # Perform operation, using optional_cm if condition is True
+    """
+
+    def __init__(self, enter_result=None):
+        self.enter_result = enter_result
+
+    def __enter__(self):
+        return self.enter_result
+
+    def __exit__(self, *excinfo):
+        pass
+
+
+class NullStrategy:
+    """A mock of TensorFlow Strategy.scope() that does nothing."""
+
+    scope = nullcontext
