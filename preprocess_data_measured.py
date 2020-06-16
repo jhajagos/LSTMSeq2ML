@@ -465,10 +465,46 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
 
                 count_feature_threshold = int(n_i_training_size * feature_threshold)
 
-                # TODO: Feature mask for categorical variables sum up all across categories
+                # Feature mask for measurement categorical variables have to be done differently
+                # We want to count the total time the measurment was made on a per visit basis
                 frequency_count = f5a["/data/frequency/count"][...]
+                frequency_count_labels = convert_binary_string_array(f5a["/data/samples/labels"][...])
+
+                frequency_labels_parsed = [label.split("|") for label in frequency_count_labels]
+
+                feature_dict = {}
+                for i in range(len(frequency_labels_parsed)):
+                    category, concept_id = frequency_labels_parsed[i][0], frequency_labels_parsed[i][2]
+                    if category == "measurement_categorical":
+                        if concept_id in feature_dict:
+                            feature_dict[concept_id] += [i]
+                        else:
+                            feature_dict[concept_id] = [i]
+
+                # We don't know if features co-occur so we sum up across all
+                # Total count
+                total_count_feature_dict = {}
+                for concept_id in feature_dict:
+                    positions = feature_dict[concept_id]
+                    freq_across = 0
+                    for position in positions:
+                        freq_across += frequency_count[0, position]
+
+                    total_count_feature_dict[concept_id] = freq_across
+
+                concepts_to_include = [concept_id for concept_id in total_count_feature_dict if total_count_feature_dict[concept_id] >= count_feature_threshold]
+
                 feature_mask_raw = frequency_count >= count_feature_threshold  # Just based on counts
                 feature_mask = feature_mask_raw[0]
+
+                for concept_id in concepts_to_include:
+                    positions = feature_dict[concept_id]
+                    for position in positions:
+                        current_state = feature_mask[position]
+                        if not(current_state):
+                            print("Including categorical feature: '%s'" % frequency_count_labels[position])
+                        feature_mask[position] = True
+
 
                 for feature in features_to_exclude:
                     if feature in dynamic_labels:
@@ -631,14 +667,20 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                 test_seq_label_ds[0, 0:len(selected_features)] = np.array(selected_features, dtype=data_labels.dtype)
 
                 custom_features = [b"age_years_fraction_100", b"gender|Male", b"gender|Female", b"time_fraction_weeks"]
+                raw_custom_features = [b"age_years", b"gender|Male", b"gender|Female", b"time_hours"]
+
                 train_seq_label_ds[0, -4:] = np.array(custom_features, dtype=data_labels.dtype)
                 test_seq_label_ds[0, -4:] = np.array(custom_features, dtype=data_labels.dtype)
+
+                raw_train_seq_label_ds[0, -4:] = np.array(raw_custom_features, dtype=data_labels.dtype)
+                raw_test_seq_label_ds[0, -4:] = np.array(raw_custom_features, dtype=data_labels.dtype)
 
                 train_id_ds = f5a["/data/processed/train/identifiers/"].create_dataset("core_array",
                                                                                        shape=(train_n_rows, 3),
                                                                                        dtype="int")
                 test_id_ds = f5a["/data/processed/test/identifiers/"].create_dataset("core_array",
                                                                                        shape=(test_n_rows, 3),
+
                                                                                        dtype="int")
 
                 train_id_labels_ds = f5a["/data/processed/train/identifiers/"].create_dataset("column_annotations",
@@ -651,9 +693,6 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
 
                 train_id_labels_ds[...] = np.array([b"id", b"identifier_id", b"start_time"])
                 test_id_labels_ds[...] = np.array([b"id", b"identifier_id", b"start_time"])
-
-                raw_train_seq_label_ds[...] = train_seq_label_ds[...]
-                raw_test_seq_label_ds[...] = test_seq_label_ds[...]
 
                 # Target labels
                 target_labels_list = []
@@ -735,13 +774,14 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                     custom_sub_array = np.zeros(shape=(sequence_length, 4))
                     raw_custom_sub_array = np.zeros(shape=(sequence_length, 4))
 
-                    custom_sub_array[:, 0] = age_array[i]  # Age
+                    custom_sub_array[:, 0] = age_array[i]  # Age in years / 100
                     custom_sub_array[:, 1] = male_array[i]  # Male
                     custom_sub_array[:, 2] = female_array[i]  # Female
                     # Divide number of seconds elapsed by seconds in a week
                     custom_sub_array[:, 3] = f5["/dynamic/carry_forward/metadata/core_array"][i, 0:sequence_length,
                                              delta_time_index] / 604800.0  # normalized to weeks (1.0 = one week)
 
+                    raw_custom_sub_array[:, 0] = age_array[i] * 100  # Age in years
                     raw_custom_sub_array[...] = custom_sub_array[...]
                     raw_custom_sub_array[:, 3] = f5["/dynamic/carry_forward/metadata/core_array"][i, 0:sequence_length,
                                              delta_time_index] / (60 * 60)  # number of hours
