@@ -505,7 +505,6 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                             print("Including categorical feature: '%s'" % frequency_count_labels[position])
                         feature_mask[position] = True
 
-
                 for feature in features_to_exclude:
                     if feature in dynamic_labels:
                         feature_mask[dynamic_labels.index(feature)] = 0
