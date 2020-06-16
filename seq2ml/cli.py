@@ -189,7 +189,6 @@ def train(
     # Get the timestamp for use later when saving outputs.
     timestamp = get_timestamp()
 
-    print("Training to predict '{}'.".format(target_name))
 
     print("Instantiating model")
     # Try to get the model first so if it is not available, we error quickly.
@@ -210,11 +209,27 @@ def train(
     # Find the target index for the labels.
     with h5py.File(filepath, mode="r") as f:
         y_train_labels = f["/data/processed/train/target/column_annotations"][:]
+    y_train_labels = list(map(bytes.decode, y_train_labels.flatten().tolist()))
 
-    target_prefix = "static_condition_hierarchy_condition_concept_name|"
-    target_index_name = target_prefix + target_name
-    target_labels = [str(s, "utf-8") for s in y_train_labels.flatten().tolist()]
-    target_index = target_labels.index(target_index_name)
+    # Search for target in list.
+    indices = []
+    for i, label in enumerate(y_train_labels):
+        # TODO: is this necessary? This accounts for instances where the target name
+        # can match multiple labels, but the user gave the exact target name
+        # (minus prefix).
+        if target_name == label.split("|")[-1]:
+            indices = [i]
+            break
+        elif target_name.lower() in label.lower():
+            indices.append(i)
+    if not indices:
+        raise ValueError("no labels found for target name '{}'".format(target_name))
+    elif len(indices) > 1:
+        raise ValueError("{} labels found for target name '{}'".format(len(indices), target_name))
+
+    target_index = indices[0]
+    target_name = y_train_labels[target_index]
+    print("Training to predict '{}'.".format(target_name))
 
     # Load train/test data.
     with h5py.File(filepath, mode="r") as f:
@@ -234,7 +249,7 @@ def train(
     target_name_label = "_".join(target_name.lower().split())
 
     if output_dir is None:
-        output_dir = tempfile.mkdtemp(suffix="_" + timestamp)
+        output_dir = tempfile.mkdtemp(prefix="seq2ml_{}_".format(timestamp))
     elif not os.path.exists(output_dir):
         os.makedirs(output_dir)
     elif not os.path.isdir(output_dir):
@@ -274,9 +289,9 @@ def train(
         results_dict = {
             "meta": {"python_program": os.path.abspath(__file__)},
             "model": {
-                "learning_rate": learning_rate,
-                "batch_size": batch_size,
-                "epochs": epochs,
+                "learning_rate": float(learning_rate),
+                "batch_size": int(batch_size),
+                "epochs": int(epochs),
             },
             "target": {
                 "target_name": target_name,
@@ -284,20 +299,20 @@ def train(
             },
             "data": {
                 "input_filename": os.path.abspath(filepath),
-                "training_size_n": x_train.shape[0],
-                "max_time_steps_n": x_train.shape[1],
-                "features_n": x_train.shape[2],
-                "total_positive_cases_training_set": y_train.sum(),
+                "training_size_n": int(x_train.shape[0]),
+                "max_time_steps_n": int(x_train.shape[1]),
+                "features_n": int(x_train.shape[2]),
+                "total_positive_cases_training_set": int(y_train.sum()),
             },
             "test": {
-                "total_positive_cases_test_set": y_test.sum(),
-                "sum_predicted_test_set": y_pred_classes.sum(),
-                "sum_of_probabilities_test_set": y_pred.sum(),
-                "model_auc_score": sklearn.metrics.roc_auc_score(y_test, y_pred),
-                "f1_score": sklearn.metrics.f1_score(y_pred_classes, y_test),
+                "total_positive_cases_test_set": y_test.sum().astype(float),
+                "sum_predicted_test_set": y_pred_classes.sum().astype(float),
+                "sum_of_probabilities_test_set": y_pred.sum().astype(float),
+                "model_auc_score": sklearn.metrics.roc_auc_score(y_test, y_pred).astype(float),
+                "f1_score": sklearn.metrics.f1_score(y_pred_classes, y_test).astype(float),
                 "average_precision_recall": sklearn.metrics.average_precision_score(
                     y_pred_classes, y_test
-                ),
+                ).astype(float),
                 "classification_report": sklearn.metrics.classification_report(
                     y_pred_classes, y_test
                 ),
@@ -307,7 +322,7 @@ def train(
         path = output_dir / "{}_results.json".format(timestamp)
         print("Saving evaluation results to", path)
         with open(path, "w") as f:
-            json.dump(str(results_dict), f)
+            json.dump(results_dict, f)
 
         pprint.pprint(results_dict)
 
