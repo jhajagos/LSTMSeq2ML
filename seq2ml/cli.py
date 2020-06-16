@@ -171,6 +171,16 @@ def popular(*, filepath, n_cut):
 @click.option("--save-history/--no-save-history", default=True, show_default=True)
 @click.option("--evaluate/--no-evaluate", default=True, show_default=True)
 @click.option("--model-kwds", type=JSONParamType(), default=None, show_default=True)
+@click.option("--early-stopping/--no-early-stopping", default=True, show_default=True)
+@click.option(
+    "--early-stopping-kwds", type=JSONParamType(), default=None, show_default=True
+)
+@click.option(
+    "--model-checkpoint/--no-model-checkpoint", default=True, show_default=True
+)
+@click.option(
+    "--model-checkpoint-kwds", type=JSONParamType(), default=None, show_default=True
+)
 def train(
     *,
     filepath,
@@ -182,13 +192,16 @@ def train(
     learning_rate,
     save_history,
     evaluate,
-    model_kwds
+    model_kwds,
+    early_stopping,
+    early_stopping_kwds,
+    model_checkpoint,
+    model_checkpoint_kwds
 ):
     """Train a recurrent network."""
 
     # Get the timestamp for use later when saving outputs.
     timestamp = get_timestamp()
-
 
     print("Instantiating model")
     # Try to get the model first so if it is not available, we error quickly.
@@ -225,7 +238,9 @@ def train(
     if not indices:
         raise ValueError("no labels found for target name '{}'".format(target_name))
     elif len(indices) > 1:
-        raise ValueError("{} labels found for target name '{}'".format(len(indices), target_name))
+        raise ValueError(
+            "{} labels found for target name '{}'".format(len(indices), target_name)
+        )
 
     target_index = indices[0]
     target_name = y_train_labels[target_index]
@@ -258,8 +273,35 @@ def train(
     print("Saving outputs to", output_dir)
     output_dir = Path(output_dir)
 
-    # TODO: add callbacks. Use timestamp from above.
     callbacks = []
+    if early_stopping:
+        default_early_stopping_kwds = dict(
+            monitor="val_loss",
+            min_delta=0,
+            patience=2,
+            verbose=1,
+            mode="auto",
+            baseline=None,
+            restore_best_weights=True,
+        )
+        default_early_stopping_kwds.update(early_stopping_kwds or {})
+        print("Using callback EarlyStopping(**{})".format(default_early_stopping_kwds))
+        callbacks.append(tfk.callbacks.EarlyStopping(**default_early_stopping_kwds))
+    if model_checkpoint:
+        default_model_checkpoint_kwds = dict(
+            filepath=str(output_dir / "weights.{epoch:03d}-{val_loss:.4f}.hdf5"),
+            monitor="val_loss",
+            verbose=1,
+            save_best_only=False,
+            save_weights_only=False,
+            mode="auto",
+            save_freq="epoch",
+        )
+        default_model_checkpoint_kwds.update(model_checkpoint_kwds or {})
+        print(
+            "Using callback ModelCheckpoint(**{})".format(default_model_checkpoint_kwds)
+        )
+        callbacks.append(tfk.callbacks.ModelCheckpoint(**default_model_checkpoint_kwds))
 
     print("Training model")
     history = model.fit(
@@ -309,8 +351,12 @@ def train(
                 "ratio_positive_cases_test_set": y_test.mean().round(4).astype(float),
                 "sum_predicted_test_set": y_pred_classes.sum().astype(float),
                 "sum_of_probabilities_test_set": y_pred.sum().astype(float),
-                "model_auc_score": sklearn.metrics.roc_auc_score(y_test, y_pred).astype(float),
-                "f1_score": sklearn.metrics.f1_score(y_pred_classes, y_test).astype(float),
+                "model_auc_score": sklearn.metrics.roc_auc_score(y_test, y_pred).astype(
+                    float
+                ),
+                "f1_score": sklearn.metrics.f1_score(y_pred_classes, y_test).astype(
+                    float
+                ),
                 "average_precision_recall": sklearn.metrics.average_precision_score(
                     y_pred_classes, y_test
                 ).astype(float),
