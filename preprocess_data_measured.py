@@ -532,10 +532,12 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                     f5a.create_group("/data/processed/train/sequence/")
                     f5a.create_group("/data/processed/train/target/")
                     f5a.create_group("/data/processed/train/identifiers/")
+                    f5a.create_group("/data/processed/train/raw_sequence/")
 
                     f5a.create_group("/data/processed/test/sequence/")
                     f5a.create_group("/data/processed/test/target/")
                     f5a.create_group("/data/processed/test/identifiers/")
+                    f5a.create_group("/data/processed/test/raw_sequence/")
 
                 if "core_array" in list(f5a["/data/processed/train/sequence"]):
                     del f5a["/data/processed/train/sequence/core_array"]
@@ -555,6 +557,15 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                     del f5a["/data/processed/test/identifiers/core_array"]
                     del f5a["/data/processed/test/identifiers/column_annotations"]
 
+                if "core_array" in list(f5a["/data/processed/train/raw_sequence"]):
+
+                    del f5a["/data/processed/train/raw_sequence/core_array"]
+                    del f5a["/data/processed/train/raw_sequence/column_annotations"]
+
+                    del f5a["/data/processed/test/raw_sequence/core_array"]
+                    del f5a["/data/processed/test/raw_sequence/column_annotations"]
+
+
                 train_seq_ds = f5a["/data/processed/train/sequence/"].create_dataset("core_array", shape=train_shape,
                                                                                      dtype="float32",
                                                                                      compression=compress_alg
@@ -563,6 +574,18 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                 train_seq_label_ds = f5a["/data/processed/train/sequence"].create_dataset("column_annotations",
                                                                                           shape=(1, len(selected_features) + number_of_custom_features),
                                                                                           dtype=data_labels.dtype)
+
+                raw_train_seq_ds = f5a["/data/processed/train/raw_sequence/"].create_dataset("core_array", shape=train_shape,
+                                                                                     dtype="float32",
+                                                                                     compression=compress_alg
+                                                                                     )
+
+                raw_train_seq_label_ds = f5a["/data/processed/train/raw_sequence"].create_dataset("column_annotations",
+                                                                                          shape=(1, len(
+                                                                                              selected_features) + number_of_custom_features),
+                                                                                          dtype=data_labels.dtype)
+
+
 
                 train_target_ds = f5a["/data/processed/train/target/"].create_dataset("core_array", shape=train_target_shape,
                                                                                       dtype="int32",
@@ -584,6 +607,17 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                                                                                         dtype=data_labels.dtype,
                                                                                         )
 
+                raw_test_seq_ds = f5a["/data/processed/test/raw_sequence/"].create_dataset("core_array", shape=test_shape,
+                                                                                   dtype="float32",
+                                                                                   compression=compress_alg)
+
+                raw_test_seq_label_ds = f5a["/data/processed/test/raw_sequence"].create_dataset("column_annotations",
+                                                                                        shape=(1, len(
+                                                                                            selected_features) + number_of_custom_features),
+                                                                                        dtype=data_labels.dtype,
+                                                                                        )
+
+
                 test_target_ds = f5a["/data/processed/test/target/"].create_dataset("core_array", shape=test_target_shape,
                                                                                     dtype="int32")
 
@@ -592,6 +626,8 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                                                                                           dtype=data_labels.dtype)
 
                 train_seq_label_ds[0, 0:len(selected_features)] = np.array(selected_features, dtype=data_labels.dtype)
+
+
                 test_seq_label_ds[0, 0:len(selected_features)] = np.array(selected_features, dtype=data_labels.dtype)
 
                 custom_features = [b"age_years_fraction_100", b"gender|Male", b"gender|Female", b"time_fraction_weeks"]
@@ -615,6 +651,9 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
 
                 train_id_labels_ds[...] = np.array([b"id", b"identifier_id", b"start_time"])
                 test_id_labels_ds[...] = np.array([b"id", b"identifier_id", b"start_time"])
+
+                raw_train_seq_label_ds[...] = train_seq_label_ds[...]
+                raw_test_seq_label_ds[...] = test_seq_label_ds[...]
 
                 # Target labels
                 target_labels_list = []
@@ -655,6 +694,7 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                         sequence_length = 1
 
                     i_carry_forward_array = carry_forward_ds[i, 0:sequence_length, feature_mask]
+
                     last_step = i_carry_forward_array[-1, :]
 
                     has_feature = np.logical_not(np.isnan(last_step))
@@ -664,16 +704,23 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
 
                     i_carry_forward_feature_array = i_carry_forward_array[:, has_feature]
 
-                    t_carry_forward_array = np.zeros(shape=(sequence_length, np.sum(feature_mask)), dtype=i_carry_forward_feature_array.dtype)
+                    t_carry_forward_array = np.zeros(shape=(sequence_length, np.sum(feature_mask)),
+                                                     dtype=i_carry_forward_feature_array.dtype)
                     t_carry_forward_array[t_carry_forward_array == 0] = np.nan
+
+                    raw_t_carry_forward_array = np.zeros(shape=(sequence_length, np.sum(feature_mask)),
+                                                         dtype=i_carry_forward_feature_array.dtype)
+                    raw_t_carry_forward_array[raw_t_carry_forward_array == 0] = np.nan
+
+                    raw_t_carry_forward_array[...] = i_carry_forward_array[...]
 
                     for j in range(quantile_features.shape[1]):
 
                         has_measured_values = np.logical_not(np.isnan(i_carry_forward_feature_array[:, j]))
-
                         linear_quantile = quantile_linear_function(i_carry_forward_feature_array[has_measured_values, j],
                                                                    quantile_values.tolist()[0],
                                                                    quantile_features[:, j].tolist())
+
                         t_carry_forward_array[has_measured_values, original_feature_position[j]] = linear_quantile
 
                     for feature_class in categorical_features_pos_dict:
@@ -686,16 +733,24 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
 
                     # Custom variables
                     custom_sub_array = np.zeros(shape=(sequence_length, 4))
+                    raw_custom_sub_array = np.zeros(shape=(sequence_length, 4))
+
                     custom_sub_array[:, 0] = age_array[i]  # Age
                     custom_sub_array[:, 1] = male_array[i]  # Male
                     custom_sub_array[:, 2] = female_array[i]  # Female
                     # Divide number of seconds elapsed by seconds in a week
                     custom_sub_array[:, 3] = f5["/dynamic/carry_forward/metadata/core_array"][i, 0:sequence_length,
-                                             delta_time_index] / 604800.0
+                                             delta_time_index] / 604800.0  # normalized to weeks
+
+                    raw_custom_sub_array[...] = custom_sub_array[...]
+                    raw_custom_sub_array[:, 3] = f5["/dynamic/carry_forward/metadata/core_array"][i, 0:sequence_length,
+                                             delta_time_index] / (60 * 60)  # number of hours
 
                     # We need to split into separate
                     if is_test:
                         test_seq_ds[pos_2_write, 0:sequence_length, :] = np.concatenate((t_carry_forward_array, custom_sub_array), axis=1)
+                        raw_test_seq_ds[pos_2_write, 0:sequence_length, :] = np.concatenate((raw_t_carry_forward_array, custom_sub_array), axis=1)
+
                         start_position = 0
                         for dependent_feature in dependent_features_paths:
                             dependent_feature_shape = dependent_features_dict[dependent_feature]
@@ -705,13 +760,13 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
 
                     else:
                         train_seq_ds[pos_2_write, 0:sequence_length, :] = np.concatenate((t_carry_forward_array, custom_sub_array), axis=1)
+                        raw_train_seq_ds[pos_2_write, 0:sequence_length, :] = np.concatenate((raw_t_carry_forward_array, custom_sub_array), axis=1)
                         start_position = 0
                         for dependent_feature in dependent_features_paths:
                             dependent_feature_shape = dependent_features_dict[dependent_feature]
                             end_position = start_position + dependent_feature_shape[1]
-                            train_target_ds[pos_2_write, start_position:end_position] = f5[
-                                                                                           dependent_feature + "/core_array/"][
-                                                                                       i, :]
+                            train_target_ds[pos_2_write, start_position:end_position] = f5[dependent_feature + "/core_array/"][i, :]
+
                             start_position = end_position
 
                     # Identifiers
