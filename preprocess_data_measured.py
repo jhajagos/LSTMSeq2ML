@@ -740,16 +740,16 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                     custom_sub_array[:, 2] = female_array[i]  # Female
                     # Divide number of seconds elapsed by seconds in a week
                     custom_sub_array[:, 3] = f5["/dynamic/carry_forward/metadata/core_array"][i, 0:sequence_length,
-                                             delta_time_index] / 604800.0  # normalized to weeks
+                                             delta_time_index] / 604800.0  # normalized to weeks (1.0 = one week)
 
                     raw_custom_sub_array[...] = custom_sub_array[...]
                     raw_custom_sub_array[:, 3] = f5["/dynamic/carry_forward/metadata/core_array"][i, 0:sequence_length,
                                              delta_time_index] / (60 * 60)  # number of hours
 
-                    # We need to split into separate
+                    # We need to split into separate test and training sets
                     if is_test:
                         test_seq_ds[pos_2_write, 0:sequence_length, :] = np.concatenate((t_carry_forward_array, custom_sub_array), axis=1)
-                        raw_test_seq_ds[pos_2_write, 0:sequence_length, :] = np.concatenate((raw_t_carry_forward_array, custom_sub_array), axis=1)
+                        raw_test_seq_ds[pos_2_write, 0:sequence_length, :] = np.concatenate((raw_t_carry_forward_array, raw_custom_sub_array), axis=1)
 
                         start_position = 0
                         for dependent_feature in dependent_features_paths:
@@ -757,10 +757,9 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                             end_position = start_position + dependent_feature_shape[1]
                             test_target_ds[pos_2_write, start_position:end_position] = f5[dependent_feature + "/core_array/"][i, :]
                             start_position = end_position
-
                     else:
                         train_seq_ds[pos_2_write, 0:sequence_length, :] = np.concatenate((t_carry_forward_array, custom_sub_array), axis=1)
-                        raw_train_seq_ds[pos_2_write, 0:sequence_length, :] = np.concatenate((raw_t_carry_forward_array, custom_sub_array), axis=1)
+                        raw_train_seq_ds[pos_2_write, 0:sequence_length, :] = np.concatenate((raw_t_carry_forward_array, raw_custom_sub_array), axis=1)
                         start_position = 0
                         for dependent_feature in dependent_features_paths:
                             dependent_feature_shape = dependent_features_dict[dependent_feature]
@@ -769,7 +768,7 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
 
                             start_position = end_position
 
-                    # Identifiers
+                    # Add in identifiers (visit_occurrence_id, patient_id, visit_start_datetime (seconds since unix epock 1/1/1970)
                     if is_test:
                         test_id_ds[pos_2_write, :] = np.array([int(row_ids[i]), int(patient_ids[i]), int(start_times[i])])
                     else:
