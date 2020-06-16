@@ -305,7 +305,8 @@ def train(
                 "total_positive_cases_training_set": int(y_train.sum()),
             },
             "test": {
-                "total_positive_cases_test_set": y_test.sum().astype(float),
+                "total_positive_cases_test_set": int(y_test.sum()),
+                "ratio_positive_cases_test_set": y_test.mean().round(4).astype(float),
                 "sum_predicted_test_set": y_pred_classes.sum().astype(float),
                 "sum_of_probabilities_test_set": y_pred.sum().astype(float),
                 "model_auc_score": sklearn.metrics.roc_auc_score(y_test, y_pred).astype(float),
