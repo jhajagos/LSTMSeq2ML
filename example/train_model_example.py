@@ -254,7 +254,7 @@ def main(input_file_name, target_name, output_directory="./", n_cut=25, predicti
     name_identifiers = [str(x, "utf8") for x in name_identifiers]
     with open(prediction_results_csv_file_name, mode="w", newline="") as fw:
         csv_writer = csv.writer(fw)
-        csv_writer.writerow(name_identifiers + ["position", "probability","ground_truth"])
+        csv_writer.writerow(name_identifiers + ["position", "probability", "ground_truth"])
         
         for i in range(identifiers.shape[0]):
             csv_writer.writerow(identifiers[i,:].tolist() + [new_sort_order[i]] + [sorted_predicted_prob[i].tolist()] + [target_sorted[i]])
