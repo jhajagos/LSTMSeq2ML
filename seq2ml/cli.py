@@ -205,7 +205,7 @@ def train(
     # Get the timestamp for use later when saving outputs.
     timestamp = get_timestamp()
 
-    print("Instantiating model")
+    click.secho("Instantiating model", fg="yellow")
     # Try to get the model first so if it is not available, we error quickly.
     model_fn = get_model_fn(model_name)
 
@@ -220,7 +220,7 @@ def train(
     with strategy.scope():
         model = model_fn() if model_kwds is None else model_fn(**model_kwds)
 
-    print("Loading data")
+    click.secho("Loading data", fg="yellow")
     # Find the target index for the labels.
     with h5py.File(filepath, mode="r") as f:
         y_train_labels = f["/data/processed/train/target/column_annotations"][:]
@@ -246,7 +246,7 @@ def train(
 
     target_index = indices[0]
     target_name = y_train_labels[target_index]
-    print("Training to predict '{}'.".format(target_name))
+    click.secho("Training to predict '{}'.".format(target_name), fg="yellow")
 
     filepath = os.path.abspath(filepath)
 
@@ -257,7 +257,7 @@ def train(
         x_test = f["/data/processed/test/sequence/core_array"][:]
         y_test = f["/data/processed/test/target/core_array"][:, target_index]
 
-    print("Compiling model")
+    click.secho("Compiling model", fg="yellow")
     with strategy.scope():
         model.compile(
             loss=tfk.losses.BinaryCrossentropy(from_logits=True),
@@ -274,7 +274,7 @@ def train(
     elif not os.path.isdir(output_dir):
         raise ValueError("output directory '{}' is not a directory".format(output_dir))
 
-    print("Saving outputs to", output_dir)
+    click.secho("Saving outputs to {}".format(output_dir), fg="yellow")
     output_dir = Path(output_dir)
 
     callbacks = []
@@ -289,7 +289,7 @@ def train(
             restore_best_weights=True,
         )
         default_early_stopping_kwds.update(early_stopping_kwds or {})
-        print("Using callback EarlyStopping(**{})".format(default_early_stopping_kwds))
+        click.secho("Using callback EarlyStopping(**{})".format(default_early_stopping_kwds), fg="yellow")
         callbacks.append(tfk.callbacks.EarlyStopping(**default_early_stopping_kwds))
     if model_checkpoint:
         default_model_checkpoint_kwds = dict(
@@ -302,12 +302,13 @@ def train(
             save_freq="epoch",
         )
         default_model_checkpoint_kwds.update(model_checkpoint_kwds or {})
-        print(
-            "Using callback ModelCheckpoint(**{})".format(default_model_checkpoint_kwds)
+        click.secho(
+            "Using callback ModelCheckpoint(**{})".format(default_model_checkpoint_kwds),
+            fg="yellow"
         )
         callbacks.append(tfk.callbacks.ModelCheckpoint(**default_model_checkpoint_kwds))
 
-    print("Training model")
+    click.secho("Training model", fg="yellow")
     history = model.fit(
         x=x_train,
         y=y_train,
@@ -319,12 +320,12 @@ def train(
 
     if save_history:
         path = output_dir / "{}_history.json".format(timestamp)
-        print("Saving training history to", path)
+        click.secho("Saving training history to {}".format(path), fg="yellow")
         with open(path, "w") as f:
             json.dump(str(history.history), f)
 
     if evaluate:
-        print("Evaluating model")
+        click.secho("Evaluating model", fg="yellow")
 
         y_pred = model.predict(x_test).ravel()
         y_pred = tf.sigmoid(y_pred).numpy()
@@ -373,7 +374,7 @@ def train(
         }
 
         path = output_dir / "{}_results.json".format(timestamp)
-        print("Saving evaluation results to", path)
+        click.secho("Saving evaluation results to {}".format(path), fg="yellow")
         with open(path, "w") as f:
             json.dump(results_dict, f)
 
@@ -397,6 +398,8 @@ def train(
             csv_filename=output_dir / "predictions.csv",
             hdf5_filename=output_dir / "predictions.hdf5",
         )
+
+        click.secho("Done. Outputs are saved to {}".format(output_dir), fg="green")
 
 
 def _save_predictions(
