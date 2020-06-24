@@ -661,9 +661,10 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                                                                                           dtype=data_labels.dtype)
 
                 train_seq_label_ds[0, 0:len(selected_features)] = np.array(selected_features, dtype=data_labels.dtype)
-
-
                 test_seq_label_ds[0, 0:len(selected_features)] = np.array(selected_features, dtype=data_labels.dtype)
+
+                raw_train_seq_label_ds[0, 0:len(selected_features)] = np.array(selected_features, dtype=data_labels.dtype)
+                raw_test_seq_label_ds[0, 0:len(selected_features)] = np.array(selected_features, dtype=data_labels.dtype)
 
                 custom_features = [b"age_years_fraction_100", b"gender|Male", b"gender|Female", b"time_fraction_weeks"]
                 raw_custom_features = [b"age_years", b"gender|Male", b"gender|Female", b"time_hours"]
