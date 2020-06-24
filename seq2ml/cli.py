@@ -1,6 +1,7 @@
 """Command-line interface to train and evaulate models."""
 
 import contextlib
+import csv
 import datetime
 import json
 import os
@@ -11,6 +12,7 @@ import tempfile
 
 import click
 import h5py
+import numpy as np
 import sklearn.metrics
 import tensorflow as tf
 
@@ -246,6 +248,8 @@ def train(
     target_name = y_train_labels[target_index]
     print("Training to predict '{}'.".format(target_name))
 
+    filepath = os.path.abspath(filepath)
+
     # Load train/test data.
     with h5py.File(filepath, mode="r") as f:
         x_train = f["/data/processed/train/sequence/core_array"][:]
@@ -289,7 +293,7 @@ def train(
         callbacks.append(tfk.callbacks.EarlyStopping(**default_early_stopping_kwds))
     if model_checkpoint:
         default_model_checkpoint_kwds = dict(
-            filepath=str(output_dir / "weights.{epoch:03d}-{val_loss:.4f}.hdf5"),
+            filepath=str(output_dir / "weights" / "weights.{epoch:03d}-{val_loss:.4f}.hdf5"),
             monitor="val_loss",
             verbose=1,
             save_best_only=False,
@@ -334,6 +338,8 @@ def train(
                 "learning_rate": float(learning_rate),
                 "batch_size": int(batch_size),
                 "epochs": int(epochs),
+                "name": str(model_name),
+                "keyword_args": {} if model_kwds is None else model_kwds,
             },
             "target": {
                 "target_name": target_name,
@@ -372,6 +378,60 @@ def train(
             json.dump(results_dict, f)
 
         pprint.pprint(results_dict)
+
+        # Save predictions to CSV and HDF5.
+        with h5py.File(filepath, mode="r") as f:
+            identifiers = f["/data/processed/test/identifiers/core_array"][:]
+            name_identifiers = (
+                f["/data/processed/test/identifiers/column_annotations"][:]
+                .flatten()
+                .tolist()
+            )
+        _save_predictions(
+            y_test=y_test,
+            y_pred=y_pred,
+            y_pred_classes=y_pred_classes,
+            target_index=target_index,
+            identifiers=identifiers,
+            name_identifiers=name_identifiers,
+            csv_filename=output_dir / "predictions.csv",
+            hdf5_filename=output_dir / "predictions.hdf5",
+        )
+
+
+def _save_predictions(
+    y_test,
+    y_pred,
+    y_pred_classes,
+    target_index,
+    identifiers,
+    name_identifiers,
+    csv_filename,
+    hdf5_filename,
+):
+    """Save model predictions to CSV and HDF5."""
+    # new_sort_order = np.lexsort([np.negative(y_pred)])
+    new_sort_order = np.argsort(np.negative(y_pred))
+    identifiers = identifiers[new_sort_order]
+    y_pred_sorted = y_pred[new_sort_order]
+    y_test_sorted = y_test[new_sort_order]
+    name_identifiers = [bytes.decode(x) for x in name_identifiers]
+
+    csv_filename = str(csv_filename)
+    with open(csv_filename, mode="w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(name_identifiers + ["position", "probability", "ground_truth"])
+        for i in range(identifiers.shape[0]):
+            writer.writerow(
+                identifiers[i].tolist()
+                + [new_sort_order[i], y_pred_sorted[i], y_test_sorted[i]]
+            )
+
+    if hdf5_filename.exists():
+        raise FileExistsError("{} already exists.".format(hdf5_filename))
+    with h5py.File(str(hdf5_filename), "w") as f:
+        f.create_dataset(name="/thresholded", data=y_pred_classes, compression="lzf")
+        f.create_dataset(name="/probabilities", data=y_pred, compression="lzf")
 
 
 def get_timestamp():
