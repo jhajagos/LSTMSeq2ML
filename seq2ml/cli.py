@@ -292,6 +292,7 @@ def train(
         click.secho("Using callback EarlyStopping(**{})".format(default_early_stopping_kwds), fg="yellow")
         callbacks.append(tfk.callbacks.EarlyStopping(**default_early_stopping_kwds))
     if model_checkpoint:
+        (output_dir / "weights").mkdir(parents=True, exist_ok=True)
         default_model_checkpoint_kwds = dict(
             filepath=str(output_dir / "weights" / "weights.{epoch:03d}-{val_loss:.4f}.hdf5"),
             monitor="val_loss",
