@@ -325,6 +325,33 @@ def train(
         with open(path, "w") as f:
             json.dump(str(history.history), f)
 
+    results_dict = {
+        "meta": {"python_program": os.path.abspath(__file__)},
+        "model": {
+            "learning_rate": float(learning_rate),
+            "batch_size": int(batch_size),
+            "epochs": int(epochs),
+            "name": str(model_name),
+            "keyword_args": {} if model_kwds is None else model_kwds,
+        },
+        "target": {
+            "target_name": target_name,
+            "target_name_label": target_name_label,
+        },
+        "data": {
+            "input_filename": os.path.abspath(filepath),
+            "training_size_n": int(x_train.shape[0]),
+            "max_time_steps_n": int(x_train.shape[1]),
+            "features_n": int(x_train.shape[2]),
+            "total_positive_cases_training_set": int(y_train.sum()),
+        }
+    }
+    if model_checkpoint:
+        files = list((output_dir / "weights").glob("weights*.hdf5"))
+        files = list(map(str, files))
+        files.sort()
+        results_dict["model"]["checkpoints"] = files
+
     if evaluate:
         click.secho("Evaluating model", fg="yellow")
 
@@ -334,26 +361,7 @@ def train(
         threshold = 0.5
         y_pred_classes = (y_pred > threshold).astype("int32")
 
-        results_dict = {
-            "meta": {"python_program": os.path.abspath(__file__)},
-            "model": {
-                "learning_rate": float(learning_rate),
-                "batch_size": int(batch_size),
-                "epochs": int(epochs),
-                "name": str(model_name),
-                "keyword_args": {} if model_kwds is None else model_kwds,
-            },
-            "target": {
-                "target_name": target_name,
-                "target_name_label": target_name_label,
-            },
-            "data": {
-                "input_filename": os.path.abspath(filepath),
-                "training_size_n": int(x_train.shape[0]),
-                "max_time_steps_n": int(x_train.shape[1]),
-                "features_n": int(x_train.shape[2]),
-                "total_positive_cases_training_set": int(y_train.sum()),
-            },
+        results_dict.update({
             "test": {
                 "total_positive_cases_test_set": int(y_test.sum()),
                 "ratio_positive_cases_test_set": y_test.mean().round(4).astype(float),
@@ -372,14 +380,7 @@ def train(
                     y_pred_classes, y_test
                 ),
             },
-        }
-
-        path = output_dir / "{}_results.json".format(timestamp)
-        click.secho("Saving evaluation results to {}".format(path), fg="yellow")
-        with open(path, "w") as f:
-            json.dump(results_dict, f)
-
-        pprint.pprint(results_dict)
+        })
 
         # Save predictions to CSV and HDF5.
         with h5py.File(filepath, mode="r") as f:
@@ -400,7 +401,14 @@ def train(
             hdf5_filename=output_dir / "predictions.hdf5",
         )
 
-        click.secho("Done. Outputs are saved to {}".format(output_dir), fg="green")
+    path = output_dir / "{}_results.json".format(timestamp)
+    click.secho("Saving evaluation results to {}".format(path), fg="yellow")
+    with open(path, "w") as f:
+        json.dump(results_dict, f)
+
+    pprint.pprint(results_dict)
+
+    click.secho("Done. Outputs are saved to {}".format(output_dir), fg="green")
 
 
 def _save_predictions(
