@@ -14,6 +14,7 @@ import click
 import h5py
 import numpy as np
 import sklearn.metrics
+import sklearn.model_selection
 import tensorflow as tf
 
 from .models import get_model_fn
@@ -172,6 +173,23 @@ def popular(*, filepath, n_cut):
 @click.option("--learning-rate", "-l", default=1e-3, show_default=True)
 @click.option("--save-history/--no-save-history", default=True, show_default=True)
 @click.option("--evaluate/--no-evaluate", default=True, show_default=True)
+@click.option(
+    "--val-split",
+    type=click.FloatRange(0, 1),
+    default=0.1,
+    show_default=True,
+    help=(
+        "Ratio of data to take from training set to make validation set. This is used"
+        " for early stopping."
+    ),
+)
+@click.option(
+    "--val-split-seed",
+    type=int,
+    default=None,
+    show_default=True,
+    help="Seed for validation split. Set this to an integer for reproducible splits.",
+)
 @click.option("--model-kwds", type=JSONParamType(), default=None, show_default=True)
 @click.option("--early-stopping/--no-early-stopping", default=True, show_default=True)
 @click.option(
@@ -194,11 +212,13 @@ def train(
     learning_rate,
     save_history,
     evaluate,
+    val_split,
+    val_split_seed,
     model_kwds,
     early_stopping,
     early_stopping_kwds,
     model_checkpoint,
-    model_checkpoint_kwds
+    model_checkpoint_kwds,
 ):
     """Train a recurrent network."""
 
@@ -257,6 +277,15 @@ def train(
         x_test = f["/data/processed/test/sequence/core_array"][:]
         y_test = f["/data/processed/test/target/core_array"][:, target_index]
 
+    # Split training set into train/validation sets.
+    click.secho(
+        f"Taking {val_split*100:.1f}% of training set to form validation set",
+        fg="yellow",
+    )
+    x_train, x_val, y_train, y_val = sklearn.model_selection.train_test_split(
+        x_train, y_train, test_size=val_split, random_state=val_split_seed
+    )
+
     click.secho("Compiling model", fg="yellow")
     with strategy.scope():
         model.compile(
@@ -289,12 +318,17 @@ def train(
             restore_best_weights=True,
         )
         default_early_stopping_kwds.update(early_stopping_kwds or {})
-        click.secho("Using callback EarlyStopping(**{})".format(default_early_stopping_kwds), fg="yellow")
+        click.secho(
+            "Using callback EarlyStopping(**{})".format(default_early_stopping_kwds),
+            fg="yellow",
+        )
         callbacks.append(tfk.callbacks.EarlyStopping(**default_early_stopping_kwds))
     if model_checkpoint:
         (output_dir / "weights").mkdir(parents=True, exist_ok=True)
         default_model_checkpoint_kwds = dict(
-            filepath=str(output_dir / "weights" / "weights.{epoch:03d}-{val_loss:.4f}.hdf5"),
+            filepath=str(
+                output_dir / "weights" / "weights.{epoch:03d}-{val_loss:.4f}.hdf5"
+            ),
             monitor="val_loss",
             verbose=1,
             save_best_only=False,
@@ -304,8 +338,10 @@ def train(
         )
         default_model_checkpoint_kwds.update(model_checkpoint_kwds or {})
         click.secho(
-            "Using callback ModelCheckpoint(**{})".format(default_model_checkpoint_kwds),
-            fg="yellow"
+            "Using callback ModelCheckpoint(**{})".format(
+                default_model_checkpoint_kwds
+            ),
+            fg="yellow",
         )
         callbacks.append(tfk.callbacks.ModelCheckpoint(**default_model_checkpoint_kwds))
 
@@ -315,7 +351,7 @@ def train(
         y=y_train,
         epochs=epochs,
         batch_size=batch_size,
-        validation_data=(x_test, y_test),
+        validation_data=(x_val, y_val),
         callbacks=callbacks,
     )
 
@@ -344,7 +380,7 @@ def train(
             "max_time_steps_n": int(x_train.shape[1]),
             "features_n": int(x_train.shape[2]),
             "total_positive_cases_training_set": int(y_train.sum()),
-        }
+        },
     }
     if model_checkpoint:
         files = list((output_dir / "weights").glob("weights*.hdf5"))
@@ -361,26 +397,30 @@ def train(
         threshold = 0.5
         y_pred_classes = (y_pred > threshold).astype("int32")
 
-        results_dict.update({
-            "test": {
-                "total_positive_cases_test_set": int(y_test.sum()),
-                "ratio_positive_cases_test_set": y_test.mean().round(4).astype(float),
-                "sum_predicted_test_set": y_pred_classes.sum().astype(float),
-                "sum_of_probabilities_test_set": y_pred.sum().astype(float),
-                "model_auc_score": sklearn.metrics.roc_auc_score(y_test, y_pred).astype(
-                    float
-                ),
-                "f1_score": sklearn.metrics.f1_score(y_pred_classes, y_test).astype(
-                    float
-                ),
-                "average_precision_recall": sklearn.metrics.average_precision_score(
-                    y_pred_classes, y_test
-                ).astype(float),
-                "classification_report": sklearn.metrics.classification_report(
-                    y_pred_classes, y_test
-                ),
-            },
-        })
+        results_dict.update(
+            {
+                "test": {
+                    "total_positive_cases_test_set": int(y_test.sum()),
+                    "ratio_positive_cases_test_set": y_test.mean()
+                    .round(4)
+                    .astype(float),
+                    "sum_predicted_test_set": y_pred_classes.sum().astype(float),
+                    "sum_of_probabilities_test_set": y_pred.sum().astype(float),
+                    "model_auc_score": sklearn.metrics.roc_auc_score(
+                        y_test, y_pred
+                    ).astype(float),
+                    "f1_score": sklearn.metrics.f1_score(y_pred_classes, y_test).astype(
+                        float
+                    ),
+                    "average_precision_recall": sklearn.metrics.average_precision_score(
+                        y_pred_classes, y_test
+                    ).astype(float),
+                    "classification_report": sklearn.metrics.classification_report(
+                        y_pred_classes, y_test
+                    ),
+                },
+            }
+        )
 
         # Save predictions to CSV and HDF5.
         with h5py.File(filepath, mode="r") as f:
