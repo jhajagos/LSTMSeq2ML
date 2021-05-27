@@ -652,7 +652,6 @@ def main(hdf5_file_name, output_file_name, steps_to_run, training_fraction_split
                                                                                         dtype=data_labels.dtype,
                                                                                         )
 
-
                 test_target_ds = f5a["/data/processed/test/target/"].create_dataset("core_array", shape=test_target_shape,
                                                                                     dtype="int32")
 
